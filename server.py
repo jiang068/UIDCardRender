@@ -51,7 +51,7 @@ def _render_html(html: str) -> bytes:
         except Exception:
             unicon_logger.exception('failed to render with wwmr')
 
-    # 4. 鸣潮角色卡片（全家福）
+    # 4. 鸣潮角色卡片
     if '鸣潮角色卡片' in html or 'ROVER RESONANCE CARD' in html :
         try:
             from cards import wwkp as wwkp_card
@@ -60,8 +60,8 @@ def _render_html(html: str) -> bytes:
         except Exception:
             unicon_logger.exception('failed to render with wwkp')
 
-    # 5. 默认：鸣潮深塔卡片 (兜底处理)
-    if '鸣潮深塔' in html or '深塔' in html:
+    # 5. 鸣潮深塔卡片
+    if '鸣潮深塔' in html : # or '深塔' in html:
         try:
             from cards import wwst as wwst_card
             unicon_logger.info('dispatch -> wwst (深塔)')
@@ -69,6 +69,16 @@ def _render_html(html: str) -> bytes:
         except Exception:
             unicon_logger.exception('failed to render with wwst')
 
+    # 6. 鸣潮全息战略
+    if '鸣潮全息战略' in html or '全息' in html:
+        try:
+            from cards import wwqx as wwqx_card
+            unicon_logger.info('dispatch -> wwqx (全息)')
+            return wwqx_card.render(html)
+        except Exception:
+            unicon_logger.exception('failed to render with wwqx')
+
+    # 未实装功能：前端兜底处理
     else:
         unicon_logger.exception('failed to render with anything')
         raise
