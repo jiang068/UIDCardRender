@@ -1,9 +1,5 @@
-"""鸣潮角色卡片渲染器 (PIL 版 · 极限提速版)
+# 鸣潮角色卡片渲染器 (PIL 版 · 极限提速版)
 
-完全按照 HTML/CSS 的视觉样式用 PIL 绘制，不依赖 Playwright。
-公共入口：
-    render(html: str) -> bytes   # 返回 JPEG bytes
-"""
 from __future__ import annotations
 
 import base64
@@ -17,9 +13,9 @@ from concurrent.futures import ThreadPoolExecutor
 from bs4 import BeautifulSoup
 from PIL import Image, ImageDraw, ImageFont, ImageChops, ImageFilter
 
-# ---------------------------------------------------------------------------
+
 # 尺寸与颜色常量
-# ---------------------------------------------------------------------------
+
 W = 1000
 PAD = 20
 INNER_W = W - PAD * 2   # 960
@@ -40,9 +36,9 @@ CHAIN_COLORS = {
     6: (255, 80, 80),     # 六链: 红
 }
 
-# ---------------------------------------------------------------------------
+
 # 字体加载
-# ---------------------------------------------------------------------------
+
 def _load_font(size: int, bold: bool = False) -> ImageFont.FreeTypeFont:
     FONT_FILE = Path(__file__).parent.parent / "assets" / "H7GBKHeavy.TTF"
     candidates = [
@@ -79,9 +75,9 @@ def _draw_text_shadow(d: ImageDraw.ImageDraw, xy: tuple, text: str, font, fill, 
     d.text((x + offset[0], y + offset[1]), text, font=font, fill=shadow)
     d.text((x, y), text, font=font, fill=fill)
 
-# ---------------------------------------------------------------------------
+
 # 图像处理缓存 (含降维模糊提速)
-# ---------------------------------------------------------------------------
+
 @lru_cache(maxsize=512)
 def _b64_img(src: str) -> Image.Image:
     if src.startswith("data:"):
@@ -99,9 +95,7 @@ def _b64_img(src: str) -> Image.Image:
 def _b64_fit(src: str, w: int, h: int, blur: bool = False, blur_radius: int = 15) -> Image.Image:
     img = _b64_img(src)
     
-    # ── 终极提速：降采样模糊滤镜 ──
-    # 在原尺寸上模糊几百万像素极其耗时。我们先将图片缩小4倍，
-    # 模糊后再放大，视觉效果100%一致，但耗时降低90%以上！
+    # 先将图片缩小4倍，模糊后再放大，视觉效果一致，但耗时降低
     if blur and blur_radius > 0:
         scale_down = 4
         sm_w, sm_h = max(1, w // scale_down), max(1, h // scale_down)
@@ -118,7 +112,6 @@ def _b64_fit(src: str, w: int, h: int, blur: bool = False, blur_radius: int = 15
         
         # 放回目标尺寸
         return img.resize((w, h), Image.BILINEAR)
-    # ──────────────────────────────
 
     iw, ih = img.size
     if iw == w and ih == h:
@@ -150,9 +143,9 @@ def _round_mask(w: int, h: int, r: int) -> Image.Image:
     d.rounded_rectangle([0, 0, w - 1, h - 1], radius=r, fill=255)
     return mask
 
-# ---------------------------------------------------------------------------
+
 # 高性能绘制工具 (含静态预渲染组件)
-# ---------------------------------------------------------------------------
+
 def _draw_rounded_rect(canvas: Image.Image, x0: int, y0: int, x1: int, y1: int, r: int, fill: tuple):
     x0i, y0i, x1i, y1i = int(round(x0)), int(round(y0)), int(round(x1)), int(round(y1))
     w, h = x1i - x0i, y1i - y0i
@@ -239,9 +232,9 @@ def _get_cached_info_base(item_w: int, item_h: int, highlight: bool) -> Image.Im
         cd.rectangle([(item_w-20)//2, item_h-2, (item_w+20)//2, item_h], fill=C_GOLD)
     return cell
 
-# ---------------------------------------------------------------------------
+
 # HTML 解析
-# ---------------------------------------------------------------------------
+
 def parse_html(html: str) -> dict:
     soup = BeautifulSoup(html, "lxml")
     data = {"bg_src": "", "user": {}, "base_info": [], "roles": [], "footer_src": "", "date": ""}
@@ -307,9 +300,9 @@ def parse_html(html: str) -> dict:
 
     return data
 
-# ---------------------------------------------------------------------------
+
 # 组件绘制
-# ---------------------------------------------------------------------------
+
 def draw_user_card(data: dict) -> Image.Image:
     H = 160
     card = Image.new("RGBA", (INNER_W, H), (0, 0, 0, 0))
@@ -513,9 +506,9 @@ def draw_role_grid_section(data: dict) -> Image.Image:
 
     return img
 
-# ---------------------------------------------------------------------------
+
 # 主渲染逻辑
-# ---------------------------------------------------------------------------
+
 def render(html: str) -> bytes:
     data = parse_html(html)
 
@@ -536,7 +529,6 @@ def render(html: str) -> bytes:
         with ThreadPoolExecutor(max_workers=8) as executor:
             for src, tw, th in tasks:
                 executor.submit(_preload_image, src, tw, th)
-    # ──────────────────────────────────────────
 
     u_card = draw_user_card(data)
     b_card = draw_base_info_section(data)

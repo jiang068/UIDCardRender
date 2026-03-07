@@ -1,12 +1,3 @@
-#!/usr/bin/env python3
-"""Async HTTP server (aiohttp) for rendering HTML -> image using a PIL renderer.
-
-This replaces the previous simple TCP debug server. It exposes a POST /render endpoint
-that accepts JSON: {"html": "..."} and returns image/jpeg bytes.
-
-It runs the CPU-bound PIL rendering function in a ThreadPoolExecutor to avoid blocking
-the event loop.
-"""
 import asyncio
 import json
 import os
@@ -26,7 +17,7 @@ logging.basicConfig(
 unicon_logger = logging.getLogger('unicon')
 unicon_logger.debug('logger initialized, level=%s', LOG_LEVEL)
 
-HOST = '0.0.0.0'
+HOST = '127.0.0.1'
 PORT = int(os.environ.get('PORT', '32000'))
 
 

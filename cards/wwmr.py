@@ -1,9 +1,5 @@
-"""鸣潮体力卡片渲染器 (PIL 版 · 复刻 HTML 样式)
+# 鸣潮体力卡片渲染器 (PIL 版 · 复刻 HTML 样式)
 
-完全按照 HTML/CSS 的视觉样式用 PIL 绘制，不依赖 Playwright。
-公共入口：
-    render(html: str) -> bytes   # 返回 JPEG bytes
-"""
 from __future__ import annotations
 
 import base64
@@ -15,15 +11,15 @@ from pathlib import Path
 from bs4 import BeautifulSoup
 from PIL import Image, ImageDraw, ImageFont, ImageFilter, ImageChops
 
-# ---------------------------------------------------------------------------
-# 画布尺寸 (与 CSS container 一致)
-# ---------------------------------------------------------------------------
+
+# 画布尺寸
+
 W = 1150
 H = 850
 
-# ---------------------------------------------------------------------------
-# 颜色（与 CSS 一致）
-# ---------------------------------------------------------------------------
+
+# 颜色
+
 C_BG          = (15, 17, 21, 255)       # #0f1115
 C_WHITE       = (255, 255, 255, 255)
 C_GOLD        = (212, 177, 99, 255)     # #d4b163
@@ -32,9 +28,9 @@ C_TIME_BG     = (0, 0, 0, 128)          # rgba(0, 0, 0, 0.5)
 C_TRACK       = (0, 0, 0, 76)           # rgba(0, 0, 0, 0.3)
 C_FILL_DEF    = (212, 177, 99, 255)     # 默认进度条填充颜色
 
-# ---------------------------------------------------------------------------
+
 # 字体加载
-# ---------------------------------------------------------------------------
+
 def _load_font(size: int, bold: bool = False) -> ImageFont.FreeTypeFont:
     # 优先使用仓库提供的 H7GBKHeavy 字体文件
     FONT_FILE = Path(__file__).parent.parent / "assets" / "H7GBKHeavy.TTF"
@@ -75,9 +71,9 @@ def _draw_text_shadow(d: ImageDraw.ImageDraw, xy: tuple, text: str, font, fill, 
     d.text((x + offset[0], y + offset[1]), text, font=font, fill=shadow)
     d.text((x, y), text, font=font, fill=fill)
 
-# ---------------------------------------------------------------------------
+
 # 图片与蒙版处理缓存
-# ---------------------------------------------------------------------------
+
 @lru_cache(maxsize=256)
 def _b64_img(src: str) -> Image.Image:
     if "," in src:
@@ -105,9 +101,9 @@ def _round_mask(w: int, h: int, r: int) -> Image.Image:
     d.rounded_rectangle([0, 0, w - 1, h - 1], radius=r, fill=255)
     return mask
 
-# ---------------------------------------------------------------------------
+
 # 渐变背景绘制
-# ---------------------------------------------------------------------------
+
 def _draw_rounded_rect(canvas: Image.Image, x0: int, y0: int, x1: int, y1: int, r: int, fill: tuple):
     w, h = x1 - x0, y1 - y0
     block = Image.new("RGBA", (w, h), (0, 0, 0, 0))
@@ -155,9 +151,9 @@ def _draw_v_gradient(canvas: Image.Image, x0: int, y0: int, x1: int, y1: int, to
     grad = grad_1d.resize((w, h), Image.NEAREST)
     canvas.alpha_composite(grad, (x0, y0))
 
-# ---------------------------------------------------------------------------
+
 # HTML 解析
-# ---------------------------------------------------------------------------
+
 def parse_html(html: str) -> dict:
     soup = BeautifulSoup(html, "lxml")
     data = {
@@ -243,9 +239,9 @@ def parse_html(html: str) -> dict:
 
     return data
 
-# ---------------------------------------------------------------------------
+
 # 主渲染逻辑
-# ---------------------------------------------------------------------------
+
 def render(html: str) -> bytes:
     data = parse_html(html)
     canvas = Image.new("RGBA", (W, H), C_BG)
@@ -438,32 +434,3 @@ def render(html: str) -> bytes:
     buf = BytesIO()
     out_rgb.save(buf, format="JPEG", quality=92, optimize=True)
     return buf.getvalue()
-
-if __name__ == "__main__":
-    import sys, pathlib, json
-
-    candidates = (
-        [pathlib.Path(sys.argv[1])]
-        if len(sys.argv) > 1
-        else sorted(
-            pathlib.Path(__file__).parent.parent.glob("received_wwmr_*.json"),
-            reverse=True,
-        )
-    )
-
-    json_file = next((p for p in candidates if p.exists()), None)
-    if json_file is None:
-        print("❌ 未找到 received_wwmr_*.json 数据文件")
-        sys.exit(1)
-
-    print(f"📄 读取: {json_file}")
-    raw = json_file.read_text(encoding="utf-8")
-    body = json.loads(raw)
-    html_content = body.get("html", raw)
-
-    print("🎨 渲染体力卡片中...")
-    jpg = render(html_content)
-
-    out_path = pathlib.Path(__file__).parent.parent / "wwmr_result.jpg"
-    out_path.write_bytes(jpg)
-    print(f"✅ 已保存: {out_path}  ({len(jpg)//1024} KB)")

@@ -1,9 +1,5 @@
-"""鸣潮深塔卡片渲染器 v2 (PIL 版 · 复刻 HTML 样式)
+# 鸣潮深塔卡片渲染器 v2 (PIL 版 · 复刻 HTML 样式)
 
-完全按照 abyss_card.html 的视觉样式用 PIL 绘制，不依赖 Playwright。
-公共入口：
-    render(html: str) -> bytes   # 返回 JPEG bytes
-"""
 from __future__ import annotations
 
 import base64
@@ -15,29 +11,23 @@ from pathlib import Path
 from bs4 import BeautifulSoup
 from PIL import Image, ImageDraw, ImageFont, ImageOps
 
-# ---------------------------------------------------------------------------
+
 # 正则表达式预编译（提升循环内解析性能）
-# ---------------------------------------------------------------------------
+
 RE_PERIOD = re.compile(r"\d+")
 RE_STARS = re.compile(r"(\d+)\s*/\s*(\d+)")
 RE_BG_URL = re.compile(r"url\('(data:[^']+)'\)")
 RE_CHAIN = re.compile(r"chain-(\d+)")
 
-# ---------------------------------------------------------------------------
-# 路径
-# ---------------------------------------------------------------------------
-ASSET = Path(__file__).parent.parent / "assets" / "abyss"
+# 画布宽度
 
-# ---------------------------------------------------------------------------
-# 画布宽度（对应 HTML body width:1000px + container padding:40px*2）
-# ---------------------------------------------------------------------------
 W = 1000          # 总宽
 PAD = 40          # 左右内边距
 INNER_W = W - PAD * 2   # 920
 
-# ---------------------------------------------------------------------------
-# 颜色（与 CSS 一致）
-# ---------------------------------------------------------------------------
+
+# 颜色
+
 C_BG           = (15,  17,  21,  255)   # #0f1115
 C_CARD_BG      = (25,  28,  34,  230)   # rgba(30,34,42,0.9) 近似
 C_WHITE        = (255, 255, 255, 255)
@@ -59,9 +49,9 @@ CHAIN_COLORS = {
     6: (255, 200,   1),   # 金
 }
 
-# ---------------------------------------------------------------------------
-# 尺寸常量（像素，与 HTML/CSS 对应）
-# ---------------------------------------------------------------------------
+
+# 尺寸常量
+
 USER_CARD_H    = 160    # 用户卡高度
 SECTION_GAP    = 35     # 各区块间距
 SECTION_PAD    = 25     # section-container 内边距
@@ -74,9 +64,9 @@ ROLE_MINI_H    = 125    # role-mini 高
 ROLE_GAP       = 20     # role 间距
 BORDER_RADIUS  = 12     # 圆角半径（通用）
 
-# ---------------------------------------------------------------------------
+
 # 字体加载
-# ---------------------------------------------------------------------------
+
 def _load_font(size: int, bold: bool = False) -> ImageFont.FreeTypeFont:
     FONT_FILE = Path(__file__).parent.parent / "assets" / "H7GBKHeavy.TTF"
     candidates = [
@@ -113,14 +103,8 @@ def _ty(font, text: str, box_h: int) -> int:
     text_h = bb[3] - bb[1]          # 实际渲染高度
     return (box_h - text_h) // 2 - bb[1] + 1   # +1 视觉微调
 
-# ---------------------------------------------------------------------------
+
 # 图片预加载与处理缓存
-# ---------------------------------------------------------------------------
-@lru_cache(maxsize=16)
-def _star_img(full: bool, size: int) -> Image.Image:
-    """返回指定尺寸的星星图（full=满星，缓存同尺寸只加载一次）。"""
-    path = ASSET / ("star_full.png" if full else "star_empty.png")
-    return Image.open(path).convert("RGBA").resize((size, size), Image.LANCZOS)
 
 @lru_cache(maxsize=256)
 def _b64_img(src: str) -> Image.Image:
@@ -134,9 +118,9 @@ def _b64_fit(src: str, w: int, h: int) -> Image.Image:
     """直接使用 PIL 原生 ImageOps.fit 加速裁剪和缩放"""
     return ImageOps.fit(_b64_img(src), (w, h), Image.Resampling.LANCZOS)
 
-# ---------------------------------------------------------------------------
+
 # 辅助：图形和蒙版预渲染缓存 (极大提升大量同尺寸 UI 的绘制性能)
-# ---------------------------------------------------------------------------
+
 @lru_cache(maxsize=64)
 def _round_mask(w: int, h: int, r: int) -> Image.Image:
     mask = Image.new("L", (w, h), 0)
@@ -188,9 +172,9 @@ def _paste_rounded(canvas: Image.Image, img: Image.Image,
         img = img.convert("RGBA")
     canvas.paste(img, (x, y), mask)
 
-# ---------------------------------------------------------------------------
+
 # HTML 解析
-# ---------------------------------------------------------------------------
+
 def parse_html(html: str) -> dict:
     """从前端 HTML 提取所有绘图数据，返回结构化字典。"""
     soup = BeautifulSoup(html, "lxml")
@@ -267,6 +251,9 @@ def parse_html(html: str) -> dict:
             star_icons = floor_el.select(".star-icon")
             floor_star = len(star_icons)   # HTML 只渲染实际数量的 full/empty
 
+            # 收集星星图的 src（前端可能会传 data: base64）
+            star_srcs = [si.get("src", "") for si in star_icons]
+
             lit = 0
             for si in star_icons:
                 src = si.get("src", "")
@@ -300,6 +287,7 @@ def parse_html(html: str) -> dict:
                 "bg_src":    floor_bg_src,
                 "name":      floor_name,
                 "star":      floor_star,
+                "star_srcs": star_srcs,
                 "roles":     roles,
             })
         towers.append({
@@ -323,9 +311,9 @@ def parse_html(html: str) -> dict:
         "towers":        towers,
     }
 
-# ---------------------------------------------------------------------------
+
 # Step 4 · 顶部用户卡
-# ---------------------------------------------------------------------------
+
 def draw_user_card(data: dict) -> Image.Image:
     H = USER_CARD_H
     card = Image.new("RGBA", (INNER_W, H), (0, 0, 0, 0))
@@ -381,9 +369,9 @@ def draw_user_card(data: dict) -> Image.Image:
 
     return card
 
-# ---------------------------------------------------------------------------
+
 # Step 5 · Section header（难度标题 + period badge + 日期）
-# ---------------------------------------------------------------------------
+
 def draw_section_header(data: dict) -> Image.Image:
     H = 60
     img = Image.new("RGBA", (INNER_W, H), (0, 0, 0, 0))
@@ -418,9 +406,9 @@ def draw_section_header(data: dict) -> Image.Image:
 
     return img
 
-# ---------------------------------------------------------------------------
+
 # Step 6 · 单层绘制
-# ---------------------------------------------------------------------------
+
 def _draw_role_mini(role: dict) -> Image.Image:
     RW, RH = ROLE_MINI_W, ROLE_MINI_H
     card = Image.new("RGBA", (RW, RH), C_ROLE_BG_DEF)
@@ -488,13 +476,22 @@ def draw_floor_item(floor: dict) -> Image.Image:
     d.text((30, _ty(F38, floor["name"], FH)),
            floor["name"], font=F38, fill=C_WHITE)
 
-    # 星星逻辑 - 保持你的大尺寸 90px
+    # 星星逻辑 - 大尺寸 90px
     STAR_SZ      = 90
     stars_total_w = 3 * STAR_SZ + 2 * 8
     star_x0 = LEFT_W + (MID_W - stars_total_w) // 2
+    star_srcs = floor.get("star_srcs", [])
     for i in range(3):
-        si = _star_img(i < floor["star"], STAR_SZ)
-        img.paste(si, (star_x0 + i * (STAR_SZ + 8), (FH - STAR_SZ) // 2), si)
+        sx = star_x0 + i * (STAR_SZ + 8)
+        src = star_srcs[i] if i < len(star_srcs) else ""
+        # 仅使用前端传入的 data:base64 图像；若不存在或解析失败则不绘制该星星
+        if src:
+            try:
+                if src.startswith("data:") or "," in src:
+                    simg = _b64_fit(src, STAR_SZ, STAR_SZ)
+                    img.paste(simg, (sx, (FH - STAR_SZ) // 2), simg)
+            except Exception:
+                pass
 
     roles   = floor["roles"]
     n       = len(roles)
@@ -514,9 +511,9 @@ def draw_floor_item(floor: dict) -> Image.Image:
         outline=(255, 255, 255, 20), width=1)
     return out
 
-# ---------------------------------------------------------------------------
+
 # Step 7: draw_tower_block — 单个塔区块
-# ---------------------------------------------------------------------------
+
 def draw_tower_block(tower: dict) -> Image.Image:
     n_floors = len(tower["floors"])
     total_h = (TOWER_HEADER_H + TOWER_GAP
@@ -551,9 +548,9 @@ def draw_tower_block(tower: dict) -> Image.Image:
 
     return img
 
-# ---------------------------------------------------------------------------
+
 # Step 8: render — 主入口，合成完整卡片，返回 JPEG bytes
-# ---------------------------------------------------------------------------
+
 def render(html: str) -> bytes:
     data = parse_html(html)
 
@@ -641,47 +638,12 @@ def render(html: str) -> bytes:
             footer_img.convert("RGBA"), (PAD, y))
         y += FOOTER_H
 
-    # ---------------------------------------------------------------------------
+    
     # 终末优化: 
     # 画布本身已经是一张有 C_BG 填色且 Alpha=255 的实心图层。
     # 丢掉原先需要计算 mask 合并的做法，直接强制 convert 转 RGB 去除透明层通道，性能立竿见影。
-    # ---------------------------------------------------------------------------
+    
     out_rgb = canvas.convert("RGB")
     buf = BytesIO()
     out_rgb.save(buf, format="JPEG", quality=92, optimize=True)
     return buf.getvalue()
-
-# ---------------------------------------------------------------------------
-# 离线测试入口（直接运行此文件：uv run cards/wwst.py）
-# ---------------------------------------------------------------------------
-
-if __name__ == "__main__":
-    import sys, pathlib
-
-    candidates = (
-        [pathlib.Path(sys.argv[1])]
-        if len(sys.argv) > 1
-        else sorted(
-            pathlib.Path(__file__).parent.parent.glob("saved_body_*.json"),
-            reverse=True,
-        )
-    )
-
-    json_file = next((p for p in candidates if p.exists()), None)
-    if json_file is None:
-        print("❌ 未找到 saved_body_*.json，请先运行服务器接收一次请求")
-        sys.exit(1)
-
-    print(f"📄 读取: {json_file}")
-    import json
-
-    raw = json_file.read_text(encoding="utf-8")
-    body = json.loads(raw)
-    html_content = body.get("html", raw)
-
-    print("🎨 渲染中...")
-    jpg = render(html_content)
-
-    out_path = pathlib.Path(__file__).parent.parent / "wwst_result.jpg"
-    out_path.write_bytes(jpg)
-    print(f"✅ 已保存: {out_path}  ({len(jpg)//1024} KB)")

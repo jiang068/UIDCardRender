@@ -1,10 +1,5 @@
-"""鸣潮海墟卡片渲染器 (PIL 版 · 极限提速版)
+# 鸣潮海墟卡片渲染器 (PIL 版 · 极限提速版)
 
-完全按照 HTML/CSS 的视觉样式用 PIL 绘制，不依赖 Playwright。
-优化：并发预热图片缓存、减少循环中的阻塞等待。
-公共入口：
-    render(html: str) -> bytes   # 返回 JPEG bytes
-"""
 from __future__ import annotations
 
 import base64
@@ -17,9 +12,9 @@ from concurrent.futures import ThreadPoolExecutor
 from bs4 import BeautifulSoup
 from PIL import Image, ImageDraw, ImageFont, ImageFilter, ImageChops
 
-# ---------------------------------------------------------------------------
+
 # 尺寸与颜色常量
-# ---------------------------------------------------------------------------
+
 W = 1000          # 总宽
 PAD = 40          # 左右内边距
 INNER_W = W - PAD * 2   # 920
@@ -40,9 +35,9 @@ CHAIN_COLORS = {
     6: (255, 200, 1),     # 金
 }
 
-# ---------------------------------------------------------------------------
+
 # 字体加载
-# ---------------------------------------------------------------------------
+
 def _load_font(size: int, bold: bool = False) -> ImageFont.FreeTypeFont:
     FONT_FILE = Path(__file__).parent.parent / "assets" / "H7GBKHeavy.TTF"
     candidates = [
@@ -81,9 +76,9 @@ def _draw_text_shadow(d: ImageDraw.ImageDraw, xy: tuple, text: str, font, fill, 
     d.text((x + offset[0], y + offset[1]), text, font=font, fill=shadow)
     d.text((x, y), text, font=font, fill=fill)
 
-# ---------------------------------------------------------------------------
+
 # 图片与蒙版处理缓存
-# ---------------------------------------------------------------------------
+
 @lru_cache(maxsize=512)
 def _b64_img(src: str) -> Image.Image:
     if src.startswith("data:"):
@@ -132,9 +127,9 @@ def _round_mask(w: int, h: int, r: int) -> Image.Image:
     d.rounded_rectangle([0, 0, w - 1, h - 1], radius=r, fill=255)
     return mask
 
-# ---------------------------------------------------------------------------
+
 # 高性能渐变绘制
-# ---------------------------------------------------------------------------
+
 def _draw_rounded_rect(canvas: Image.Image, x0: int, y0: int, x1: int, y1: int, r: int, fill: tuple):
     x0i, y0i, x1i, y1i = int(round(x0)), int(round(y0)), int(round(x1)), int(round(y1))
     w, h = x1i - x0i, y1i - y0i
@@ -187,9 +182,9 @@ def _parse_color(color_str: str, default: tuple = (212, 177, 99)) -> tuple:
             return (int(m[0]), int(m[1]), int(m[2]))
     return default
 
-# ---------------------------------------------------------------------------
+
 # HTML 解析
-# ---------------------------------------------------------------------------
+
 def parse_html(html: str) -> dict:
     soup = BeautifulSoup(html, "lxml")
     data = {
@@ -286,9 +281,9 @@ def parse_html(html: str) -> dict:
 
     return data
 
-# ---------------------------------------------------------------------------
+
 # 组件绘制
-# ---------------------------------------------------------------------------
+
 def _draw_role_mini(role: dict) -> Image.Image:
     RW, RH = 125, 125
     card = Image.new("RGBA", (RW, RH), C_ROLE_BG_DEF)
@@ -451,9 +446,9 @@ def draw_slash_block(chal: dict) -> Image.Image:
     
     return out
 
-# ---------------------------------------------------------------------------
+
 # 主渲染逻辑
-# ---------------------------------------------------------------------------
+
 def render(html: str) -> bytes:
     data = parse_html(html)
 
@@ -475,7 +470,6 @@ def render(html: str) -> bytes:
         with ThreadPoolExecutor(max_workers=8) as executor:
             for src, tw, th in tasks:
                 executor.submit(_preload_image, src, tw, th)
-    # ──────────────────────────────────────────
 
     u_card = draw_user_card(data)
     blocks = [draw_slash_block(c) for c in data["challenges"]]

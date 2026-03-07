@@ -1,9 +1,5 @@
-"""鸣潮伴行积分卡片渲染器 (PIL 版 · 复刻 HTML 样式)
+# 鸣潮伴行积分卡片渲染器 (PIL 版 · 复刻 HTML 样式)
 
-完全按照 HTML/CSS 的视觉样式用 PIL 绘制，不依赖 Playwright。
-公共入口：
-    render(html: str) -> bytes   # 返回 JPEG bytes
-"""
 from __future__ import annotations
 
 import base64
@@ -16,9 +12,9 @@ from pathlib import Path
 from bs4 import BeautifulSoup
 from PIL import Image, ImageDraw, ImageFont, ImageChops
 
-# ---------------------------------------------------------------------------
+
 # 尺寸与颜色常量
-# ---------------------------------------------------------------------------
+
 W = 1000
 PAD = 20
 INNER_W = W - PAD * 2
@@ -29,9 +25,9 @@ C_GOLD        = (212, 177, 99, 255)
 C_GREY        = (109, 113, 122, 255)
 C_DARK_BG     = (20, 22, 26, 120)
 
-# ---------------------------------------------------------------------------
+
 # 字体加载
-# ---------------------------------------------------------------------------
+
 def _load_font(size: int, bold: bool = False) -> ImageFont.FreeTypeFont:
     FONT_FILE = Path(__file__).parent.parent / "assets" / "H7GBKHeavy.TTF"
     candidates = [
@@ -75,9 +71,9 @@ def _draw_text_shadow(d: ImageDraw.ImageDraw, xy: tuple, text: str, font, fill, 
     d.text((x + offset[0], y + offset[1]), text, font=font, fill=shadow)
     d.text((x, y), text, font=font, fill=fill)
 
-# ---------------------------------------------------------------------------
+
 # 图像处理缓存
-# ---------------------------------------------------------------------------
+
 @lru_cache(maxsize=256)
 def _b64_img(src: str) -> Image.Image:
     if src.startswith("data:"):
@@ -112,9 +108,9 @@ def _round_mask(w: int, h: int, r: int) -> Image.Image:
     d.rounded_rectangle([0, 0, w - 1, h - 1], radius=r, fill=255)
     return mask
 
-# ---------------------------------------------------------------------------
+
 # 高性能绘制工具
-# ---------------------------------------------------------------------------
+
 def _draw_rounded_rect(canvas: Image.Image, x0: int, y0: int, x1: int, y1: int, r: int, fill: tuple):
     x0i, y0i, x1i, y1i = int(round(x0)), int(round(y0)), int(round(x1)), int(round(y1))
     w, h = x1i - x0i, y1i - y0i
@@ -172,9 +168,9 @@ def _draw_gradient_text(canvas: Image.Image, xy: tuple, text: str, font, top_col
     canvas.paste(grad, (x + bbox[0], y + bbox[1]), t_mask)
 
 
-# ---------------------------------------------------------------------------
+
 # HTML 解析
-# ---------------------------------------------------------------------------
+
 def parse_html(html: str) -> dict:
     soup = BeautifulSoup(html, "lxml")
     data = {
@@ -293,9 +289,9 @@ def parse_html(html: str) -> dict:
     return data
 
 
-# ---------------------------------------------------------------------------
+
 # 组件绘制
-# ---------------------------------------------------------------------------
+
 
 def draw_user_card(data: dict) -> Image.Image:
     H = 160
@@ -583,13 +579,13 @@ def draw_disclaimer(data: dict) -> Image.Image:
            
     return img
 
-# ---------------------------------------------------------------------------
+
 # 主渲染逻辑
-# ---------------------------------------------------------------------------
+
 def render(html: str) -> bytes:
     data = parse_html(html)
 
-    # ── 预构建区块 ────────────────────────────────────────────────────────
+    # 预构建区块
     u_card   = draw_user_card(data)
     sum_card = draw_score_summary(data)
     c_grid   = draw_items_grid("共鸣者积分明细", data.get("char_items", []))
@@ -619,7 +615,7 @@ def render(html: str) -> bytes:
         
     total_h += BOTTOM_PAD
 
-    # ── 画布组合 ────────────────────────────────────────────────────────
+    # 画布组合
     canvas = Image.new("RGBA", (W, total_h), C_BG)
     if data["bg_src"]:
         try:
@@ -655,35 +651,3 @@ def render(html: str) -> bytes:
     buf = BytesIO()
     out_rgb.save(buf, format="JPEG", quality=92, optimize=True)
     return buf.getvalue()
-
-# ---------------------------------------------------------------------------
-# 离线测试入口
-# ---------------------------------------------------------------------------
-if __name__ == "__main__":
-    import sys, json
-
-    candidates = (
-        [Path(sys.argv[1])]
-        if len(sys.argv) > 1
-        else sorted(
-            Path(__file__).parent.parent.glob("received_wwjf_*.json"),
-            reverse=True,
-        )
-    )
-
-    json_file = next((p for p in candidates if p.exists()), None)
-    if json_file is None:
-        print("❌ 未找到 received_wwjf_*.json，请先运行服务器接收一次请求")
-        sys.exit(1)
-
-    print(f"📄 读取: {json_file}")
-    raw = json_file.read_text(encoding="utf-8")
-    body = json.loads(raw)
-    html_content = body.get("html", raw) 
-
-    print("🎨 渲染伴行积分卡片中...")
-    jpg = render(html_content)
-
-    out_path = Path(__file__).parent.parent / "wwjf_result.jpg"
-    out_path.write_bytes(jpg)
-    print(f"✅ 已保存: {out_path}  ({len(jpg)//1024} KB)")
