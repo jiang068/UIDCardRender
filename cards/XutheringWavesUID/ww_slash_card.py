@@ -39,7 +39,7 @@ CHAIN_COLORS = {
 # 字体加载
 
 def _load_font(size: int, bold: bool = False) -> ImageFont.FreeTypeFont:
-    FONT_FILE = Path(__file__).parent.parent / "assets" / "H7GBKHeavy.TTF"
+    FONT_FILE = Path(__file__).parent.parent.parent / "assets" / "H7GBKHeavy.TTF"
     candidates = [
         str(FONT_FILE),
         "C:/Windows/Fonts/msyhbd.ttc" if bold else "C:/Windows/Fonts/msyh.ttc",

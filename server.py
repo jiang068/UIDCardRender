@@ -22,66 +22,9 @@ PORT = int(os.environ.get('PORT', '32000'))
 
 
 def _render_html(html: str) -> bytes:
-    """同步渲染入口，运行于线程池中。根据 HTML 特征分派到对应卡片渲染器。"""
-    
-    # 1. 伴行积分卡片
-    if '鸣潮伴行积分' in html or 'COMPANION REWARD SYSTEM' in html:
-        try:
-            from cards import wwjf as wwjf_card
-            unicon_logger.info('dispatch -> wwjf (积分)')
-            return wwjf_card.render(html)
-        except Exception:
-            unicon_logger.exception('failed to render with wwjf')
-
-    # 2. 海墟卡（Slash / 海墟）
-    if '鸣潮海墟' in html: # or 'slash-block' in html or '冥歌海墟' in html:
-        try:
-            from cards import wwmh as wwmh_card
-            unicon_logger.info('dispatch -> wwmh (海墟)')
-            return wwmh_card.render(html)
-        except Exception:
-            unicon_logger.exception('failed to render with wwmh')
-
-    # 3. 每日体力卡片
-    if '鸣潮体力' in html : # or 'stat-cur' in html or 'progress-fill' in html:
-        try:
-            from cards import wwmr as wwmr_card
-            unicon_logger.info('dispatch -> wwmr (体力)')
-            return wwmr_card.render(html)
-        except Exception:
-            unicon_logger.exception('failed to render with wwmr')
-
-    # 4. 鸣潮角色卡片
-    if '鸣潮角色卡片' in html or 'ROVER RESONANCE CARD' in html :
-        try:
-            from cards import wwkp as wwkp_card
-            unicon_logger.info('dispatch -> wwkp (角色)')
-            return wwkp_card.render(html)
-        except Exception:
-            unicon_logger.exception('failed to render with wwkp')
-
-    # 5. 鸣潮深塔卡片
-    if '鸣潮深塔' in html : # or '深塔' in html:
-        try:
-            from cards import wwst as wwst_card
-            unicon_logger.info('dispatch -> wwst (深塔)')
-            return wwst_card.render(html)
-        except Exception:
-            unicon_logger.exception('failed to render with wwst')
-
-    # 6. 鸣潮全息战略
-    if '鸣潮全息战略' in html or '全息' in html:
-        try:
-            from cards import wwqx as wwqx_card
-            unicon_logger.info('dispatch -> wwqx (全息)')
-            return wwqx_card.render(html)
-        except Exception:
-            unicon_logger.exception('failed to render with wwqx')
-
-    # 未实装功能：前端兜底处理
-    else:
-        unicon_logger.exception('failed to render with anything')
-        raise
+    """同步渲染入口，运行于线程池中。分流逻辑在 cards.XutheringWavesUID 中维护。"""
+    from cards import render
+    return render(html)
 
 async def render_handler(request: web.Request) -> web.Response:
     """Stream request body to disk, parse JSON (support gzip), then hand HTML to renderer.
