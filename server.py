@@ -34,7 +34,7 @@ def _render_html(html: str) -> bytes:
             unicon_logger.exception('failed to render with wwjf')
 
     # 2. 海墟卡（Slash / 海墟）
-    if '海墟' in html or 'slash-block' in html or '冥歌海墟' in html:
+    if '鸣潮海墟' in html: # or 'slash-block' in html or '冥歌海墟' in html:
         try:
             from cards import wwmh as wwmh_card
             unicon_logger.info('dispatch -> wwmh (海墟)')
@@ -43,7 +43,7 @@ def _render_html(html: str) -> bytes:
             unicon_logger.exception('failed to render with wwmh')
 
     # 3. 每日体力卡片
-    if '鸣潮体力' in html or 'stat-cur' in html or 'progress-fill' in html:
+    if '鸣潮体力' in html : # or 'stat-cur' in html or 'progress-fill' in html:
         try:
             from cards import wwmr as wwmr_card
             unicon_logger.info('dispatch -> wwmr (体力)')
@@ -52,7 +52,7 @@ def _render_html(html: str) -> bytes:
             unicon_logger.exception('failed to render with wwmr')
 
     # 4. 鸣潮角色卡片（全家福）
-    if '鸣潮角色卡片' in html or 'ROVER RESONANCE CARD' in html or 'role-grid' in html:
+    if '鸣潮角色卡片' in html or 'ROVER RESONANCE CARD' in html :
         try:
             from cards import wwkp as wwkp_card
             unicon_logger.info('dispatch -> wwkp (角色)')
@@ -60,15 +60,18 @@ def _render_html(html: str) -> bytes:
         except Exception:
             unicon_logger.exception('failed to render with wwkp')
 
-    # 5. 默认：深塔卡片 (兜底处理)
-    try:
-        from cards import wwst as wwst_card
-        unicon_logger.info('dispatch -> wwst (深塔)')
-        return wwst_card.render(html)
-    except Exception:
-        unicon_logger.exception('failed to render with wwst')
-        raise
+    # 5. 默认：鸣潮深塔卡片 (兜底处理)
+    if '鸣潮深塔' in html or '深塔' in html:
+        try:
+            from cards import wwst as wwst_card
+            unicon_logger.info('dispatch -> wwst (深塔)')
+            return wwst_card.render(html)
+        except Exception:
+            unicon_logger.exception('failed to render with wwst')
 
+    else:
+        unicon_logger.exception('failed to render with anything')
+        raise
 
 async def render_handler(request: web.Request) -> web.Response:
     """Stream request body to disk, parse JSON (support gzip), then hand HTML to renderer.
