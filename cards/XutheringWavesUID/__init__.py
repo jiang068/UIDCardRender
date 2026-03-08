@@ -13,6 +13,11 @@ from pathlib import Path
 from typing import Literal
 
 from PIL import ImageFont
+from PIL import Image, ImageOps, ImageDraw
+from io import BytesIO
+import base64
+import re
+from functools import lru_cache
 
 # ---------- 统一字体加载（供本包内所有卡片使用） ----------
 _ASSETS_DIR = Path(__file__).parent.parent.parent / "assets"
@@ -107,6 +112,92 @@ def draw_text_mixed(draw: ImageDraw.ImageDraw, xy: tuple, text: str,
         draw.text((x, draw_y), ch, font=f, fill=fill)
         x += int(f.getlength(ch))
 
+
+# ---------- 集中化的图像加载与缓存（只缓存来自磁盘的图片，data: URI/长 base64 不缓存） ----------
+_BASE_DIR = Path(__file__).parent.parent
+
+
+def _looks_like_base64(s: str) -> bool:
+    if not s: return False
+    # data: URIs explicitly considered base64
+    if s.startswith('data:'): return True
+    # 如果是非常长的纯 base64 字符串（无路径/协议）也视为直接解码的情况
+    if len(s) > 200 and re.fullmatch(r'[A-Za-z0-9+/=\n\r]+', s):
+        return True
+    return False
+
+
+@lru_cache(maxsize=512)
+def _b64_img_from_path(p: str) -> Image.Image:
+    # cached loader for local file paths only
+    return Image.open(p).convert('RGBA')
+
+
+def _b64_img(src: str) -> Image.Image:
+    """Load an image from src.
+
+    - If src is a data: URI or looks like a long base64 blob, decode immediately (no caching).
+    - If src resolves to an existing local path (relative to project root or absolute), use
+      a cached loader so repeated loads are fast.
+    - Otherwise, fall back to decoding base64 directly (no caching).
+    """
+    if not src:
+        raise ValueError('empty src')
+
+    # direct base64 / data: URIs are not cached
+    if _looks_like_base64(src):
+        if ',' in src:
+            src = src.split(',', 1)[1]
+        return Image.open(BytesIO(base64.b64decode(src))).convert('RGBA')
+
+    # try resolve as local path
+    p = Path(src) if Path(src).is_absolute() else (_BASE_DIR / src)
+    try:
+        if p.exists():
+            return _b64_img_from_path(str(p))
+    except Exception:
+        # if path checking fails, fallback to base64 decode
+        pass
+
+    # fallback: assume src is base64 content
+    if ',' in src:
+        src = src.split(',', 1)[1]
+    return Image.open(BytesIO(base64.b64decode(src))).convert('RGBA')
+
+
+@lru_cache(maxsize=512)
+def _b64_fit_from_path(p: str, w: int, h: int) -> Image.Image:
+    img = Image.open(p).convert('RGBA')
+    return ImageOps.fit(img, (w, h), Image.Resampling.LANCZOS)
+
+
+def _b64_fit(src: str, w: int, h: int) -> Image.Image:
+    # behave similarly to _b64_img regarding caching
+    if not src:
+        raise ValueError('empty src')
+    if _looks_like_base64(src):
+        if ',' in src: src = src.split(',', 1)[1]
+        img = Image.open(BytesIO(base64.b64decode(src))).convert('RGBA')
+        return ImageOps.fit(img, (w, h), Image.Resampling.LANCZOS)
+
+    p = Path(src) if Path(src).is_absolute() else (_BASE_DIR / src)
+    try:
+        if p.exists():
+            return _b64_fit_from_path(str(p), w, h)
+    except Exception:
+        pass
+
+    if ',' in src: src = src.split(',', 1)[1]
+    img = Image.open(BytesIO(base64.b64decode(src))).convert('RGBA')
+    return ImageOps.fit(img, (w, h), Image.Resampling.LANCZOS)
+
+
+@lru_cache(maxsize=64)
+def _round_mask(w: int, h: int, r: int) -> Image.Image:
+    mask = Image.new('L', (w, h), 0)
+    ImageDraw.Draw(mask).rounded_rectangle([0, 0, w - 1, h - 1], radius=r, fill=255)
+    return mask
+
 logger = logging.getLogger('unicon')
 
 # ---------- 自动加载本包内所有子模块 ----------
@@ -114,6 +205,33 @@ _here = Path(__file__).parent
 for _mi in pkgutil.iter_modules([str(_here)]):
     _mod = importlib.import_module(f"cards.XutheringWavesUID.{_mi.name}")
     globals()[_mi.name] = _mod
+
+
+def clear_image_caches() -> list[str]:
+    """Clear image-related lru_caches in child modules to avoid unbounded memory growth.
+
+    This scans loaded submodules for common cache-backed helpers like `_b64_img` and
+    `_b64_fit` and calls their `cache_clear()` if present. Returns a list of cleared
+    symbol names for diagnostic purposes.
+    """
+    cleared: list[str] = []
+    for name, mod in list(globals().items()):
+        # only consider imported submodules (which are module objects)
+        if not hasattr(mod, '__dict__'):
+            continue
+        try:
+            for fn_name in ('_b64_img', '_b64_fit'):
+                fn = getattr(mod, fn_name, None)
+                if fn and hasattr(fn, 'cache_clear'):
+                    try:
+                        fn.cache_clear()
+                        cleared.append(f"{name}.{fn_name}")
+                    except Exception:
+                        # best-effort: ignore failures per-module
+                        continue
+        except Exception:
+            continue
+    return cleared
 
 # ---------- HTML → 模块 分流规则 ----------
 # 每条规则：(关键字列表, 模块名, 日志标签)

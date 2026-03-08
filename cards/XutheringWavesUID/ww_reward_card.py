@@ -15,7 +15,7 @@ from PIL import Image, ImageDraw, ImageFont, ImageChops
 # 使用包级统一字体对象与混排引擎
 from . import F12, F14, F16, F18, F20, F22, F24, F26, F28, F30, F32, F38, F42, F52, F60
 from . import M12, M14, M16, M18, M20, M22, M24, M26, M28, M30, M32, M38, M42, M52, M60
-from . import draw_text_mixed
+from . import draw_text_mixed, _b64_img, _b64_fit, _round_mask
 
 # 尺寸与颜色常量
 W = 1000
@@ -38,37 +38,7 @@ def _draw_text_shadow(d: ImageDraw.ImageDraw, xy: tuple, text: str, cn_font, en_
     draw_text_mixed(d, (x + offset[0], y + offset[1]), text, cn_font=cn_font, en_font=en_font, fill=shadow)
     draw_text_mixed(d, (x, y), text, cn_font=cn_font, en_font=en_font, fill=fill)
 
-# 图像处理缓存
-@lru_cache(maxsize=256)
-def _b64_img(src: str) -> Image.Image:
-    if src.startswith("data:"):
-        if "," in src:
-            src = src.split(",", 1)[1]
-        return Image.open(BytesIO(base64.b64decode(src))).convert("RGBA")
-    else:
-        # 兼容相对路径
-        base_dir = Path(__file__).parent.parent.parent
-        p = Path(src) if Path(src).is_absolute() else base_dir / src
-        if p.exists():
-            return Image.open(p).convert("RGBA")
-        return Image.open(BytesIO(base64.b64decode(src))).convert("RGBA")
-
-@lru_cache(maxsize=256)
-def _b64_fit(src: str, w: int, h: int) -> Image.Image:
-    img = _b64_img(src)
-    iw, ih = img.size
-    scale = max(w / iw, h / ih)
-    nw, nh = int(iw * scale), int(ih * scale)
-    img = img.resize((nw, nh), Image.LANCZOS)
-    x, y = (nw - w) // 2, (nh - h) // 2
-    return img.crop((x, y, x + w, y + h))
-
-@lru_cache(maxsize=64)
-def _round_mask(w: int, h: int, r: int) -> Image.Image:
-    mask = Image.new("L", (w, h), 0)
-    d = ImageDraw.Draw(mask)
-    d.rounded_rectangle([0, 0, w - 1, h - 1], radius=r, fill=255)
-    return mask
+# 图像加载/缓存由包级实现提供（只缓存本地路径），本模块委托包级函数以避免 data: URI 被本地缓存
 
 # 高性能绘制工具
 def _draw_rounded_rect(canvas: Image.Image, x0: int, y0: int, x1: int, y1: int, r: int, fill: tuple):

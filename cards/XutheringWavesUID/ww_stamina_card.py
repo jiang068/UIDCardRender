@@ -28,7 +28,7 @@ C_FILL_DEF    = (212, 177, 99, 255)     # 默认进度条填充颜色
 # 【关键修改 1】：不仅导入 F 系列(中文)，还要导入 M 系列(英文) 和混排引擎
 from . import F14, F18, F20, F22, F24, F28, F30, F40, F42, F46
 from . import M14, M18, M20, M22, M24, M28, M30, M40, M42, M46
-from . import draw_text_mixed
+from . import draw_text_mixed, _b64_img, _b64_fit, _round_mask
 
 def _ty(font, text: str, box_h: int) -> int:
     bb = font.getbbox(text)
@@ -42,33 +42,7 @@ def _draw_text_shadow(d: ImageDraw.ImageDraw, xy: tuple, text: str, cn_font, en_
     draw_text_mixed(d, (x, y), text, cn_font=cn_font, en_font=en_font, fill=fill)
 
 
-# 图片与蒙版处理缓存
-@lru_cache(maxsize=256)
-def _b64_img(src: str) -> Image.Image:
-    if "," in src:
-        src = src.split(",", 1)[1]
-    return Image.open(BytesIO(base64.b64decode(src))).convert("RGBA")
-
-@lru_cache(maxsize=256)
-def _b64_fit(src: str, w: int, h: int) -> Image.Image:
-    img = _b64_img(src)
-    iw, ih = img.size
-    scale = max(w / iw, h / ih)
-    nw, nh = int(iw * scale), int(ih * scale)
-    if scale < 0.5:
-        img = img.resize((max(nw * 2, w), max(nh * 2, h)), Image.BOX)
-        scale = max(w / img.width, h / img.height)
-        nw, nh = int(img.width * scale), int(img.height * scale)
-    img = img.resize((nw, nh), Image.BILINEAR)
-    x, y = (nw - w) // 2, (nh - h) // 2
-    return img.crop((x, y, x + w, y + h))
-
-@lru_cache(maxsize=64)
-def _round_mask(w: int, h: int, r: int) -> Image.Image:
-    mask = Image.new("L", (w, h), 0)
-    d = ImageDraw.Draw(mask)
-    d.rounded_rectangle([0, 0, w - 1, h - 1], radius=r, fill=255)
-    return mask
+# 图片与蒙版处理由包级统一实现（避免 data: URI 被本地缓存）
 
 
 # 渐变背景绘制

@@ -40,7 +40,7 @@ CHAIN_COLORS = {
 from . import draw_text_mixed, M12, M14, M15, M16, M17, M18, M20, M22, M24, M26, M28, M30, M32, M34, M36, M38, M42, M48, M72
 
 # 使用包级统一字体对象（从包里导入以复用同一实例）
-from . import F12, F14, F18, F20, F24, F26, F30, F42
+from . import F12, F14, F18, F20, F24, F26, F30, F42, _b64_img, _b64_fit, _round_mask
 
 def _ty(font, text: str, box_h: int) -> int:
     bb = font.getbbox(text)
@@ -57,72 +57,14 @@ def _draw_text_shadow(d: ImageDraw.ImageDraw, xy: tuple, text: str, font, fill, 
     draw_text_mixed(d, (x, y), text, cn_font=font, en_font=en_font, fill=fill)
 
 
-# 图像处理缓存 (含降维模糊提速)
-
-@lru_cache(maxsize=512)
-def _b64_img(src: str) -> Image.Image:
-    if src.startswith("data:"):
-        if "," in src:
-            src = src.split(",", 1)[1]
-        return Image.open(BytesIO(base64.b64decode(src))).convert("RGBA")
-    else:
-        base_dir = Path(__file__).parent.parent
-        p = Path(src) if Path(src).is_absolute() else base_dir / src
-        if p.exists():
-            return Image.open(p).convert("RGBA")
-        return Image.open(BytesIO(base64.b64decode(src))).convert("RGBA")
-
-@lru_cache(maxsize=512)
-def _b64_fit(src: str, w: int, h: int, blur: bool = False, blur_radius: int = 15) -> Image.Image:
-    img = _b64_img(src)
-    
-    # 先将图片缩小4倍，模糊后再放大，视觉效果一致，但耗时降低
-    if blur and blur_radius > 0:
-        scale_down = 4
-        sm_w, sm_h = max(1, w // scale_down), max(1, h // scale_down)
-        
-        iw, ih = img.size
-        scale = max(sm_w / iw, sm_h / ih)
-        nw, nh = int(iw * scale), int(ih * scale)
-        img = img.resize((nw, nh), Image.BILINEAR)
-        x, y = (nw - sm_w) // 2, (nh - sm_h) // 2
-        img = img.crop((x, y, x + sm_w, y + sm_h))
-        
-        # 在小图上执行模糊
-        img = img.filter(ImageFilter.BoxBlur(max(1, blur_radius // scale_down)))
-        
-        # 放回目标尺寸
-        return img.resize((w, h), Image.BILINEAR)
-
-    iw, ih = img.size
-    if iw == w and ih == h:
-        return img.copy()
-        
-    scale = max(w / iw, h / ih)
-    nw, nh = int(iw * scale), int(ih * scale)
-    if scale < 0.5:
-        img = img.resize((max(nw * 2, w), max(nh * 2, h)), Image.BOX)
-        scale = max(w / img.width, h / img.height)
-        nw, nh = int(img.width * scale), int(img.height * scale)
-        
-    img = img.resize((nw, nh), Image.BILINEAR)
-    x, y = (nw - w) // 2, (nh - h) // 2
-    return img.crop((x, y, x + w, y + h))
-
+# 图像加载/缓存由包级统一实现（只对本地路径启用缓存，避免 data: URI 导致内存增长）
 def _preload_image(src: str, w: int, h: int):
-    """用于线程池并发预热缓存的空函数"""
+    """用于线程池并发预热缓存的空函数（委托到包级 _b64_fit）"""
     if src:
         try:
             _b64_fit(src, w, h)
         except:
             pass
-
-@lru_cache(maxsize=64)
-def _round_mask(w: int, h: int, r: int) -> Image.Image:
-    mask = Image.new("L", (w, h), 0)
-    d = ImageDraw.Draw(mask)
-    d.rounded_rectangle([0, 0, w - 1, h - 1], radius=r, fill=255)
-    return mask
 
 
 # 高性能绘制工具 (含静态预渲染组件)

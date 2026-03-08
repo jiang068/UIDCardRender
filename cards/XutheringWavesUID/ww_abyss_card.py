@@ -10,7 +10,7 @@ from pathlib import Path
 
 from bs4 import BeautifulSoup
 from PIL import Image, ImageDraw, ImageFont, ImageOps
-from . import F12, F18, F20, F22, F24, F28, F32, F36, F38, F42, F48, draw_text_mixed, M12, M14, M15, M16, M17, M18, M20, M22, M24, M26, M28, M30, M32, M34, M36, M38, M42, M48, M72
+from . import F12, F18, F20, F22, F24, F28, F32, F36, F38, F42, F48, draw_text_mixed, M12, M14, M15, M16, M17, M18, M20, M22, M24, M26, M28, M30, M32, M34, M36, M38, M42, M48, M72, _b64_img, _b64_fit, _round_mask
 
 
 # 正则表达式预编译（提升循环内解析性能）
@@ -75,29 +75,7 @@ def _ty(font, text: str, box_h: int) -> int:
     return (box_h - text_h) // 2 - bb[1] + 1   # +1 视觉微调
 
 
-# 图片预加载与处理缓存
-
-@lru_cache(maxsize=256)
-def _b64_img(src: str) -> Image.Image:
-    """'data:image/...;base64,XXX' 或纯 base64 → RGBA Image（已缓存）"""
-    if "," in src:
-        src = src.split(",", 1)[1]
-    return Image.open(BytesIO(base64.b64decode(src))).convert("RGBA")
-
-@lru_cache(maxsize=256)
-def _b64_fit(src: str, w: int, h: int) -> Image.Image:
-    """直接使用 PIL 原生 ImageOps.fit 加速裁剪和缩放"""
-    return ImageOps.fit(_b64_img(src), (w, h), Image.Resampling.LANCZOS)
-
-
-# 辅助：图形和蒙版预渲染缓存 (极大提升大量同尺寸 UI 的绘制性能)
-
-@lru_cache(maxsize=64)
-def _round_mask(w: int, h: int, r: int) -> Image.Image:
-    mask = Image.new("L", (w, h), 0)
-    d = ImageDraw.Draw(mask)
-    d.rounded_rectangle([0, 0, w - 1, h - 1], radius=r, fill=255)
-    return mask
+# 图片加载/缓存委托给包级实现（避免 data: URI 被本地缓存）
 
 @lru_cache(maxsize=64)
 def _get_rounded_rect_block(w: int, h: int, r: int, fill: tuple) -> Image.Image:

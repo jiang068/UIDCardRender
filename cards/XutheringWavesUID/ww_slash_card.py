@@ -39,7 +39,7 @@ CHAIN_COLORS = {
 from . import draw_text_mixed, M12, M14, M15, M16, M17, M18, M20, M22, M24, M26, M28, M30, M32, M34, M36, M38, M42, M48, M72
 
 # 使用包级统一字体对象（从包里导入以复用同一实例）
-from . import F12, F14, F18, F20, F24, F28, F30, F40, F42, F56
+from . import F12, F14, F18, F20, F24, F28, F30, F40, F42, F56, _b64_img, _b64_fit, _round_mask
 
 def _ty(font, text: str, box_h: int) -> int:
     bb = font.getbbox(text)
@@ -56,55 +56,15 @@ def _draw_text_shadow(d: ImageDraw.ImageDraw, xy: tuple, text: str, font, fill, 
     draw_text_mixed(d, (x, y), text, cn_font=font, en_font=en_font, fill=fill)
 
 
-# 图片与蒙版处理缓存
-
-@lru_cache(maxsize=512)
-def _b64_img(src: str) -> Image.Image:
-    if src.startswith("data:"):
-        if "," in src:
-            src = src.split(",", 1)[1]
-        return Image.open(BytesIO(base64.b64decode(src))).convert("RGBA")
-    else:
-        base_dir = Path(__file__).parent.parent
-        p = Path(src) if Path(src).is_absolute() else base_dir / src
-        if p.exists():
-            return Image.open(p).convert("RGBA")
-        return Image.open(BytesIO(base64.b64decode(src))).convert("RGBA")
-
-@lru_cache(maxsize=512)
-def _b64_fit(src: str, w: int, h: int) -> Image.Image:
-    img = _b64_img(src)
-    iw, ih = img.size
-    
-    if iw == w and ih == h:
-        return img.copy()
-        
-    scale = max(w / iw, h / ih)
-    nw, nh = int(iw * scale), int(ih * scale)
-    
-    if scale < 0.5:
-        img = img.resize((max(nw * 2, w), max(nh * 2, h)), Image.BOX)
-        scale = max(w / img.width, h / img.height)
-        nw, nh = int(img.width * scale), int(img.height * scale)
-        
-    img = img.resize((nw, nh), Image.BILINEAR)
-    x, y = (nw - w) // 2, (nh - h) // 2
-    return img.crop((x, y, x + w, y + h))
-
+# 图片与蒙版处理由包级统一实现（只在包内缓存本地路径，避免 data: URI 导致内存增长）
+# 预热函数仍然调用包级 _b64_fit
 def _preload_image(src: str, w: int, h: int):
-    """用于多线程并发预热的空跑函数"""
+    """用于多线程并发预热的空跑函数（委托到包级 _b64_fit）"""
     if src:
         try:
             _b64_fit(src, w, h)
         except:
             pass
-
-@lru_cache(maxsize=64)
-def _round_mask(w: int, h: int, r: int) -> Image.Image:
-    mask = Image.new("L", (w, h), 0)
-    d = ImageDraw.Draw(mask)
-    d.rounded_rectangle([0, 0, w - 1, h - 1], radius=r, fill=255)
-    return mask
 
 
 # 高性能渐变绘制

@@ -11,6 +11,7 @@ from pathlib import Path
 
 from bs4 import BeautifulSoup
 from PIL import Image, ImageDraw, ImageFont, ImageOps
+from . import _b64_img, _b64_fit, _round_mask
 
 # 常量定义
 
@@ -66,22 +67,7 @@ def parse_color(c_str: str, default=(255, 255, 255, 255)) -> tuple:
     return default
 
 
-# 图像缓存与工具
-
-@lru_cache(maxsize=128)
-def _b64_img(src: str) -> Image.Image:
-    if "," in src: src = src.split(",", 1)[1]
-    return Image.open(BytesIO(base64.b64decode(src))).convert("RGBA")
-
-@lru_cache(maxsize=128)
-def _b64_fit(src: str, w: int, h: int) -> Image.Image:
-    return ImageOps.fit(_b64_img(src), (w, h), Image.Resampling.LANCZOS)
-
-@lru_cache(maxsize=64)
-def _round_mask(w: int, h: int, r: int) -> Image.Image:
-    mask = Image.new("L", (w, h), 0)
-    ImageDraw.Draw(mask).rounded_rectangle([0, 0, w - 1, h - 1], radius=r, fill=255)
-    return mask
+# 图像加载/缓存由包级统一实现（避免 data: URI 被本地缓存）
 
 def _draw_rounded_rect(canvas: Image.Image, x0: int, y0: int, x1: int, y1: int, 
                        r: int, fill: tuple, outline=None, width=1) -> None:

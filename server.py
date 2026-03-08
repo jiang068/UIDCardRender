@@ -115,6 +115,35 @@ def create_app():
 
     # Thread pool
     app['pool'] = ThreadPoolExecutor(max_workers=2)
+    
+    # Background cache cleaner: periodically call cards.XutheringWavesUID.clear_image_caches
+    # to avoid unbounded growth from per-request data: URIs being cached by many modules.
+    async def _cache_cleaner_loop(app):
+        import asyncio
+        from cards.XutheringWavesUID import clear_image_caches
+        while True:
+            try:
+                cleared = clear_image_caches()
+                if cleared:
+                    unicon_logger.debug('cleared image caches: %s', cleared)
+            except Exception:
+                unicon_logger.exception('cache cleaner failed')
+            await asyncio.sleep(60 * 10)  # every 10 minutes
+
+    async def _start_cache_cleaner(app):
+        app['cache_cleaner_task'] = asyncio.create_task(_cache_cleaner_loop(app))
+
+    async def _stop_cache_cleaner(app):
+        task = app.get('cache_cleaner_task')
+        if task:
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+
+    app.on_startup.append(_start_cache_cleaner)
+    app.on_cleanup.append(_stop_cache_cleaner)
     return app
 
 
