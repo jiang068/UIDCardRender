@@ -2,12 +2,13 @@ import asyncio
 import json
 import os
 import logging
+import gzip
+import gc
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime
 from aiohttp import web
 
 # ---------------------------
-# Logging (名为 'unicon'，兼容历史记忆中的名称)
+# Logging 
 # ---------------------------
 LOG_LEVEL = os.environ.get('UNICON_LOG_LEVEL', os.environ.get('LOG_LEVEL', 'INFO')).upper()
 logging.basicConfig(
@@ -22,85 +23,54 @@ PORT = int(os.environ.get('PORT', '32000'))
 
 
 def _render_html(html: str) -> bytes:
-    """同步渲染入口，运行于线程池中。分流逻辑在 cards.XutheringWavesUID 中维护。"""
+    """同步渲染入口，运行于线程池中。"""
     from cards import render
-    return render(html)
+    try:
+        return render(html)
+    finally:
+        # 【内存护城河】渲染结束时，强制释放 PIL 产生的临时图层和遮罩内存
+        gc.collect()
 
 async def render_handler(request: web.Request) -> web.Response:
-    """Stream request body to disk, parse JSON (support gzip), then hand HTML to renderer.
-
-    This avoids loading large request bodies fully into memory.
     """
-    import tempfile
-    import gzip
-    from pathlib import Path
-
-    tmp_path = None
+    纯内存数据流转，零磁盘 I/O 消耗。
+    采用“阅后即焚”策略，及时销毁中间变量以节省内存。
+    """
     try:
-        # Create temp file in the project dir to avoid cross-drive issues on Windows
-        out_dir = os.path.dirname(__file__)
-        fd, tmp_path = tempfile.mkstemp(prefix='render_', suffix='.tmp', dir=out_dir)
-        os.close(fd)
+        # 1. 直接读取到内存 (抛弃慢速的硬盘 tmp 临时文件)
+        body_bytes = await request.read()
 
-        # Stream incoming body to file
-        with open(tmp_path, 'wb') as wf:
-            async for chunk in request.content.iter_chunked(65536):
-                if not chunk:
-                    break
-                wf.write(chunk)
-
-        # Detect content-encoding header or gzip magic
+        # 2. 内存中直接解压 Gzip
         ce = request.headers.get('Content-Encoding', '').lower()
-        is_gzip = ce == 'gzip'
-        if not is_gzip:
-            # check magic bytes
-            with open(tmp_path, 'rb') as f:
-                start = f.read(2)
-            if start == b'\x1f\x8b':
-                is_gzip = True
+        if ce == 'gzip' or body_bytes.startswith(b'\x1f\x8b'):
+            body_bytes = gzip.decompress(body_bytes)
 
-        # Read and decode
-        if is_gzip:
-            with gzip.open(tmp_path, 'rb') as f:
-                body_bytes = f.read()
-        else:
-            with open(tmp_path, 'rb') as f:
-                body_bytes = f.read()
+        # 3. 解码为字符串并立即销毁字节流
+        text = body_bytes.decode('utf-8', errors='ignore')
+        del body_bytes 
 
-        try:
-            text = body_bytes.decode('utf-8')
-        except Exception:
-            try:
-                text = body_bytes.decode('latin-1')
-            except Exception:
-                return web.json_response({'error': 'failed to decode request body'}, status=400)
-
-        # Parse JSON
-        try:
-            data = json.loads(text)
-        except Exception as e:
-            return web.json_response({'error': f'invalid json: {e}'}, status=400)
+        # 4. 解析 JSON 并立即销毁长文本
+        data = json.loads(text)
+        del text 
 
         html = data.get('html')
         if not html:
             return web.json_response({'error': 'missing html'}, status=400)
 
+        # 5. 提取完毕，立刻销毁体积庞大的 JSON 字典对象
+        del data 
+
+        # 6. 将干净纯粹的 html 丢给子线程渲染
         loop = asyncio.get_running_loop()
-        # Run the CPU-bound render in a threadpool
         img_bytes = await loop.run_in_executor(request.app['pool'], _render_html, html)
 
         return web.Response(body=img_bytes, content_type='image/jpeg')
+
     except web.HTTPException:
         raise
     except Exception as e:
+        unicon_logger.error(f"Render error: {e}", exc_info=True)
         return web.json_response({'error': str(e)}, status=500)
-    finally:
-        # clean up temp file
-        try:
-            if tmp_path and Path(tmp_path).exists():
-                Path(tmp_path).unlink()
-        except Exception:
-            pass
 
 
 async def health(request):
@@ -108,48 +78,21 @@ async def health(request):
 
 
 def create_app():
-    # Allow large request bodies (e.g. HTML payloads up to 50MB)
-    app = web.Application(client_max_size=50 * 1024 * 1024)
+    # 限制单次请求最大 40MB (完全足够纯文字或带几个 base64 的 html)
+    app = web.Application(client_max_size=40 * 1024 * 1024)
     app.router.add_post('/render', render_handler)
     app.router.add_get('/health', health)
 
-    # Thread pool
+    # 【内存护城河】严格限制并发数为 1 或 2，防止瞬间内存激增
+    # 设为 1 最省内存，设为 2 处理稍微快点。这里默认设为 2。
     app['pool'] = ThreadPoolExecutor(max_workers=2)
     
-    # Background cache cleaner: periodically call cards.XutheringWavesUID.clear_image_caches
-    # to avoid unbounded growth from per-request data: URIs being cached by many modules.
-    async def _cache_cleaner_loop(app):
-        import asyncio
-        from cards.XutheringWavesUID import clear_image_caches
-        while True:
-            try:
-                cleared = clear_image_caches()
-                if cleared:
-                    unicon_logger.debug('cleared image caches: %s', cleared)
-            except Exception:
-                unicon_logger.exception('cache cleaner failed')
-            await asyncio.sleep(60 * 10)  # every 10 minutes
-
-    async def _start_cache_cleaner(app):
-        app['cache_cleaner_task'] = asyncio.create_task(_cache_cleaner_loop(app))
-
-    async def _stop_cache_cleaner(app):
-        task = app.get('cache_cleaner_task')
-        if task:
-            task.cancel()
-            try:
-                await task
-            except asyncio.CancelledError:
-                pass
-
-    app.on_startup.append(_start_cache_cleaner)
-    app.on_cleanup.append(_stop_cache_cleaner)
     return app
 
 
 def main():
     app = create_app()
-    unicon_logger.info('starting server on %s:%s', HOST, PORT)
+    unicon_logger.info('starting unicon server on %s:%s (Optimized Low-Mem Edition)', HOST, PORT)
     web.run_app(app, host=HOST, port=PORT, access_log=unicon_logger)
 
 

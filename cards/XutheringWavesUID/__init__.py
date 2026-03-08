@@ -127,7 +127,7 @@ def _looks_like_base64(s: str) -> bool:
     return False
 
 
-@lru_cache(maxsize=512)
+@lru_cache(maxsize=16)
 def _b64_img_from_path(p: str) -> Image.Image:
     # cached loader for local file paths only
     return Image.open(p).convert('RGBA')
@@ -165,7 +165,7 @@ def _b64_img(src: str) -> Image.Image:
     return Image.open(BytesIO(base64.b64decode(src))).convert('RGBA')
 
 
-@lru_cache(maxsize=512)
+@lru_cache(maxsize=32)
 def _b64_fit_from_path(p: str, w: int, h: int) -> Image.Image:
     img = Image.open(p).convert('RGBA')
     return ImageOps.fit(img, (w, h), Image.Resampling.LANCZOS)
@@ -192,7 +192,7 @@ def _b64_fit(src: str, w: int, h: int) -> Image.Image:
     return ImageOps.fit(img, (w, h), Image.Resampling.LANCZOS)
 
 
-@lru_cache(maxsize=64)
+@lru_cache(maxsize=16)
 def _round_mask(w: int, h: int, r: int) -> Image.Image:
     mask = Image.new('L', (w, h), 0)
     ImageDraw.Draw(mask).rounded_rectangle([0, 0, w - 1, h - 1], radius=r, fill=255)
