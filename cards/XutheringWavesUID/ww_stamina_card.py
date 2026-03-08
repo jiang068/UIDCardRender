@@ -11,15 +11,11 @@ from pathlib import Path
 from bs4 import BeautifulSoup
 from PIL import Image, ImageDraw, ImageFont, ImageFilter, ImageChops
 
-
 # 画布尺寸
-
 W = 1150
 H = 850
 
-
 # 颜色
-
 C_BG          = (15, 17, 21, 255)       # #0f1115
 C_WHITE       = (255, 255, 255, 255)
 C_GOLD        = (212, 177, 99, 255)     # #d4b163
@@ -29,51 +25,24 @@ C_TRACK       = (0, 0, 0, 76)           # rgba(0, 0, 0, 0.3)
 C_FILL_DEF    = (212, 177, 99, 255)     # 默认进度条填充颜色
 
 
-# 字体加载
-
-def _load_font(size: int, bold: bool = False) -> ImageFont.FreeTypeFont:
-    # 优先使用仓库提供的 H7GBKHeavy 字体文件
-    FONT_FILE = Path(__file__).parent.parent.parent / "assets" / "H7GBKHeavy.TTF"
-    candidates = [
-        str(FONT_FILE),
-        "C:/Windows/Fonts/msyhbd.ttc" if bold else "C:/Windows/Fonts/msyh.ttc",
-        "C:/Windows/Fonts/msyh.ttc",
-        "C:/Windows/Fonts/simhei.ttf",
-        "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-    ]
-    for p in candidates:
-        try:
-            return ImageFont.truetype(str(p), size)
-        except Exception:
-            continue
-    return ImageFont.load_default()
-
-# 预加载常用字号
-F14 = _load_font(14)
-F18 = _load_font(18, bold=True)
-F20 = _load_font(20, bold=True)
-F22 = _load_font(22, bold=True)
-F24 = _load_font(24, bold=True)
-F28 = _load_font(28, bold=True)
-F30 = _load_font(30)
-F40 = _load_font(40, bold=True)
-F42 = _load_font(42, bold=True)
-F46 = _load_font(46, bold=True)
+# 【关键修改 1】：不仅导入 F 系列(中文)，还要导入 M 系列(英文) 和混排引擎
+from . import F14, F18, F20, F22, F24, F28, F30, F40, F42, F46
+from . import M14, M18, M20, M22, M24, M28, M30, M40, M42, M46
+from . import draw_text_mixed
 
 def _ty(font, text: str, box_h: int) -> int:
     bb = font.getbbox(text)
     text_h = bb[3] - bb[1]
     return (box_h - text_h) // 2 - bb[1] + 1
 
-def _draw_text_shadow(d: ImageDraw.ImageDraw, xy: tuple, text: str, font, fill, shadow=(0,0,0,200), offset=(0,2)):
+# 【关键修改 2】：重写阴影文字绘制函数，让它内部使用智能混排
+def _draw_text_shadow(d: ImageDraw.ImageDraw, xy: tuple, text: str, cn_font, en_font, fill, shadow=(0,0,0,200), offset=(0,2)):
     x, y = xy
-    d.text((x + offset[0], y + offset[1]), text, font=font, fill=shadow)
-    d.text((x, y), text, font=font, fill=fill)
+    draw_text_mixed(d, (x + offset[0], y + offset[1]), text, cn_font=cn_font, en_font=en_font, fill=shadow)
+    draw_text_mixed(d, (x, y), text, cn_font=cn_font, en_font=en_font, fill=fill)
 
 
 # 图片与蒙版处理缓存
-
 @lru_cache(maxsize=256)
 def _b64_img(src: str) -> Image.Image:
     if "," in src:
@@ -103,7 +72,6 @@ def _round_mask(w: int, h: int, r: int) -> Image.Image:
 
 
 # 渐变背景绘制
-
 def _draw_rounded_rect(canvas: Image.Image, x0: int, y0: int, x1: int, y1: int, r: int, fill: tuple):
     w, h = x1 - x0, y1 - y0
     block = Image.new("RGBA", (w, h), (0, 0, 0, 0))
@@ -113,8 +81,6 @@ def _draw_rounded_rect(canvas: Image.Image, x0: int, y0: int, x1: int, y1: int, 
 def _draw_h_gradient(canvas: Image.Image, x0: int, y0: int, x1: int, y1: int, left_rgba: tuple, right_rgba: tuple, r: int = 0):
     w, h = x1 - x0, y1 - y0
     if w <= 0 or h <= 0: return
-    
-    # 优化：只生成 1 像素高的渐变线（一维循环）
     grad_1d = Image.new("RGBA", (w, 1))
     for xi in range(w):
         t = xi / max(w - 1, 1)
@@ -122,44 +88,32 @@ def _draw_h_gradient(canvas: Image.Image, x0: int, y0: int, x1: int, y1: int, le
             a = int(left_rgba[3] - (left_rgba[3] * 0.5) * (t / 0.6))
         else:
             a = int((left_rgba[3] * 0.5) * (1.0 - (t - 0.6) / 0.4))
-            
         color = (left_rgba[0], left_rgba[1], left_rgba[2], a)
         grad_1d.putpixel((xi, 0), color)
-        
-    # 利用 C 底层瞬间垂直拉伸到目标高度
     grad = grad_1d.resize((w, h), Image.NEAREST)
-            
     if r > 0:
         mask = _round_mask(w, h, r)
         new_a = ImageChops.multiply(grad.split()[3], mask)
         grad.putalpha(new_a)
-        
     canvas.alpha_composite(grad, (x0, y0))
 
 def _draw_v_gradient(canvas: Image.Image, x0: int, y0: int, x1: int, y1: int, top_rgba: tuple, bottom_rgba: tuple):
     w, h = x1 - x0, y1 - y0
     if w <= 0 or h <= 0: return
-    
-    # 优化：只生成 1 像素宽的渐变线（一维循环）
     grad_1d = Image.new("RGBA", (1, h))
     for yi in range(h):
         t = yi / max(h - 1, 1)
         color = tuple(int(top_rgba[i] + (bottom_rgba[i] - top_rgba[i]) * t) for i in range(4))
         grad_1d.putpixel((0, yi), color)
-        
-    # 利用 C 底层瞬间水平拉伸到目标宽度
     grad = grad_1d.resize((w, h), Image.NEAREST)
     canvas.alpha_composite(grad, (x0, y0))
 
 
 # HTML 解析
-
 def parse_html(html: str) -> dict:
     soup = BeautifulSoup(html, "lxml")
     data = {
-        "bg_src": "",
-        "char_src": "",
-        "top_status": [],
+        "bg_src": "", "char_src": "", "top_status": [],
         "sidebar": {"title": "每日状态", "time_badge": "", "is_urgent": False, "rows": []},
         "user": {"avatar_src": "", "name": "", "uid": ""},
         "footer_stats": []
@@ -207,16 +161,14 @@ def parse_html(html: str) -> dict:
                 c_val = float(re.sub(r'[^\d.]', '', cur.get_text()))
                 t_val = float(re.sub(r'[^\d.]', '', tot.get_text()))
                 if t_val > 0: ratio = min(c_val / t_val, 1.0)
-            except:
-                pass
+            except: pass
 
         data["sidebar"]["rows"].append({
             "icon": icon.get("src", "") if icon else "",
             "name": name.get_text(strip=True) if name else "",
             "cur": cur.get_text(strip=True) if cur else "",
             "total": tot.get_text(strip=True).replace("/", "").strip() if tot else "",
-            "ratio": ratio,
-            "color": fill_color
+            "ratio": ratio, "color": fill_color
         })
 
     av = soup.select_one(".user-section .avatar-img")
@@ -236,12 +188,10 @@ def parse_html(html: str) -> dict:
                 "label": lbl.get_text(strip=True),
                 "sub": sub.get_text(strip=True) if sub else ""
             })
-
     return data
 
 
 # 主渲染逻辑
-
 def render(html: str) -> bytes:
     data = parse_html(html)
     canvas = Image.new("RGBA", (W, H), C_BG)
@@ -252,8 +202,7 @@ def render(html: str) -> bytes:
         try:
             bg = _b64_fit(data["bg_src"], W, H)
             canvas.alpha_composite(bg)
-        except:
-            pass
+        except: pass
 
     # 2. 绘制右侧立绘层 (char-layer)
     if data["char_src"]:
@@ -271,10 +220,9 @@ def render(html: str) -> bytes:
             cy = -90
             canvas.alpha_composite(shadow, (cx - 10, cy))
             canvas.alpha_composite(char_img, (cx, cy))
-        except:
-            pass
+        except: pass
 
-    # 3. Footer 底部渐变背景 (height: 160px)
+    # 3. Footer 底部渐变背景
     FOOTER_H = 160
     _draw_v_gradient(canvas, 0, H - FOOTER_H, W, H, (0, 0, 0, 0), (0, 0, 0, 217))
 
@@ -292,16 +240,17 @@ def render(html: str) -> bytes:
                 icon_img = _b64_fit(badge["icon"], 24, 24)
                 canvas.alpha_composite(icon_img, (icon_x, ty + 8))
             except: pass
-        _draw_text_shadow(d, (icon_x + 30, ty + _ty(F22, badge["text"], bh)), badge["text"], F22, C_WHITE)
+        
+        # 【修改 3】：传入中/英两套字体
+        _draw_text_shadow(d, (icon_x + 30, ty + _ty(F22, badge["text"], bh)), badge["text"], F22, M22, C_WHITE)
         tx += bw + 15
 
     # 5. 绘制 Sidebar (左侧主体数据)
     sb_x = 40
-    sb_y = 150 # 标题起始高度
+    sb_y = 150
     sb_w = 480 
     
-    # Sidebar Header
-    _draw_text_shadow(d, (sb_x + 10, sb_y), data["sidebar"]["title"], F28, C_WHITE)
+    _draw_text_shadow(d, (sb_x + 10, sb_y), data["sidebar"]["title"], F28, M28, C_WHITE)
     
     if data["sidebar"]["time_badge"]:
         t_text = data["sidebar"]["time_badge"]
@@ -310,57 +259,44 @@ def render(html: str) -> bytes:
         tx_badge = sb_x + sb_w - tw
         bg_col = C_URGENT_BG if data["sidebar"]["is_urgent"] else C_TIME_BG
         _draw_rounded_rect(canvas, tx_badge, sb_y - 2, tx_badge + tw, sb_y - 2 + th, 18, bg_col)
-        d.text((tx_badge + 18, sb_y - 2 + _ty(F20, t_text, th)), t_text, font=F20, fill=C_WHITE)
+        # 替换普通的 d.text
+        draw_text_mixed(d, (tx_badge + 18, sb_y - 2 + _ty(F20, t_text, th)), t_text, F20, M20, C_WHITE)
 
-    # 增大标题和第一个模块的间隙
     sb_y += 55
 
-    # Sidebar Rows
     for row in data["sidebar"]["rows"]:
         row_h = 140  
-        
-        # Row 背景半透明渐变
         _draw_h_gradient(canvas, sb_x, sb_y, sb_x + sb_w, sb_y + row_h, (0,0,0,102), (0,0,0,0), r=16)
 
-        # Icon (整体微调上移)
         if row["icon"]:
             try:
                 r_icon = _b64_fit(row["icon"], 84, 84)
-                # Y 轴：从 18 上移至 14
                 canvas.alpha_composite(r_icon, (sb_x + 25, sb_y + 14))
             except: pass
         
-        # Text block (文字整体上移)
         text_x = sb_x + 25 + 84 + 20
-        # 名称上移 (从 30 上移至 20)
-        _draw_text_shadow(d, (text_x, sb_y + 20), row["name"], F22, (255,255,255,240))
+        _draw_text_shadow(d, (text_x, sb_y + 20), row["name"], F22, M22, (255,255,255,240))
         
         cur_w = F46.getlength(row["cur"])
-        # 数值上移 (从 64 上移至 54)
-        _draw_text_shadow(d, (text_x, sb_y + 54), row["cur"], F46, C_WHITE, offset=(0,2))
+        _draw_text_shadow(d, (text_x, sb_y + 54), row["cur"], F46, M46, C_WHITE, offset=(0,2))
         
         if row["total"]:
             total_str = f" / {row['total']}"
-            # 分母上移 (从 78 上移至 68)
-            _draw_text_shadow(d, (text_x + cur_w + 5, sb_y + 68), total_str, F30, (255,255,255,200))
+            _draw_text_shadow(d, (text_x + cur_w + 5, sb_y + 68), total_str, F30, M30, (255,255,255,200))
         
-        # Progress Track
         track_w = sb_w - 50
         track_y = sb_y + row_h - 26
         _draw_rounded_rect(canvas, sb_x + 25, track_y, sb_x + 25 + track_w, track_y + 8, 4, C_TRACK)
         
-        # Progress Fill
         fill_w = int(track_w * row["ratio"])
         if fill_w > 0:
             _draw_rounded_rect(canvas, sb_x + 25, track_y, sb_x + 25 + fill_w, track_y + 8, 4, row["color"])
         
-        # 模块间距
         sb_y += row_h + 30
 
     # 6. 绘制 Footer User Section & Stats
     fy = H - FOOTER_H
     
-    # Avatar
     av_x = 40
     av_y = fy + (FOOTER_H - 110) // 2
     av_size = 110
@@ -373,15 +309,13 @@ def render(html: str) -> bytes:
         except: pass
     d.ellipse([av_x, av_y, av_x + av_size, av_y + av_size], outline=(212, 177, 99, 204), width=3)
 
-    # Name & UID
     user_tx = av_x + av_size + 25
-    _draw_text_shadow(d, (user_tx, av_y + 15), data["user"]["name"], F40, C_WHITE)
+    _draw_text_shadow(d, (user_tx, av_y + 15), data["user"]["name"], F40, M40, C_WHITE)
     uid_str = f"UID {data['user']['uid']}"
-    _draw_text_shadow(d, (user_tx, av_y + 65), uid_str, F24, C_GOLD)
+    _draw_text_shadow(d, (user_tx, av_y + 65), uid_str, F24, M24, C_GOLD)
 
-    # Footer Stats (右侧对齐)
     stat_x = W - 40
-    C_WARN_RED = (255, 80, 80, 255)  # 醒目的提示红
+    C_WARN_RED = (255, 80, 80, 255)  
 
     for i, stat in enumerate(reversed(data["footer_stats"])):
         val_text = stat["val"]
@@ -392,36 +326,29 @@ def render(html: str) -> bytes:
         block_w = max(s_val_w, s_lbl_w, 100)
         
         sx = stat_x - block_w
-        
-        # 居中计算数值文本的 X 和 Y 坐标
         val_x = sx + (block_w - s_val_w) // 2
         val_y = fy + 35
         
-        # --- 条件变色渲染 ---
         if '/' in val_text:
             n_str, d_str = val_text.split('/', 1)
-            # 战歌、深塔、海墟：如果不满（分子不等于分母），分子标红
             if n_str.strip() != d_str.strip():
-                _draw_text_shadow(d, (val_x, val_y), n_str, F42, C_WARN_RED)
+                _draw_text_shadow(d, (val_x, val_y), n_str, F42, M42, C_WARN_RED)
                 n_w = F42.getlength(n_str)
-                _draw_text_shadow(d, (val_x + n_w, val_y), "/" + d_str, F42, C_WHITE)
+                _draw_text_shadow(d, (val_x + n_w, val_y), "/" + d_str, F42, M42, C_WHITE)
             else:
-                _draw_text_shadow(d, (val_x, val_y), val_text, F42, C_WHITE)
+                _draw_text_shadow(d, (val_x, val_y), val_text, F42, M42, C_WHITE)
         else:
-            # 千道门扉：如果不为 6000，整体标红
             if lbl_text == "千道门扉" and val_text != "6000":
-                _draw_text_shadow(d, (val_x, val_y), val_text, F42, C_WARN_RED)
+                _draw_text_shadow(d, (val_x, val_y), val_text, F42, M42, C_WARN_RED)
             else:
-                _draw_text_shadow(d, (val_x, val_y), val_text, F42, C_WHITE)
-        # --------------------
+                _draw_text_shadow(d, (val_x, val_y), val_text, F42, M42, C_WHITE)
 
-        _draw_text_shadow(d, (sx + (block_w - s_lbl_w)//2, fy + 85), lbl_text, F18, (255,255,255,200))
+        _draw_text_shadow(d, (sx + (block_w - s_lbl_w)//2, fy + 85), lbl_text, F18, M18, (255,255,255,200))
         
         if stat["sub"]:
             s_sub_w = F14.getlength(stat["sub"])
-            _draw_text_shadow(d, (sx + (block_w - s_sub_w)//2, fy + 110), stat["sub"], F14, (255,255,255,150))
+            _draw_text_shadow(d, (sx + (block_w - s_sub_w)//2, fy + 110), stat["sub"], F14, M14, (255,255,255,150))
         
-        # 分割线
         if i < len(data["footer_stats"]) - 1:
             line_x = sx - 17
             d.line([(line_x, fy + 50), (line_x, fy + 110)], fill=(255,255,255,76), width=1)

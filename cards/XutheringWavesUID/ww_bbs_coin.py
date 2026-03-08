@@ -13,7 +13,7 @@ from PIL import Image, ImageDraw, ImageFont, ImageOps
 
 # 常量定义
 
-W = 500  # 画布总宽
+W = 440  # 画布总宽
 CARD_W = 420
 
 C_BG_PAGE = (244, 247, 249, 255)  # #f4f7f9
@@ -25,31 +25,10 @@ C_ASSET_BG = (31, 31, 31, 255)    # #1f1f1f
 C_GOLD_TEXT = (223, 174, 95, 255) # #dfae5f
 
 
-# 字体加载
+from . import draw_text_mixed, M12, M13, M14, M15, M16, M17, M18, M20, M22, M24, M26, M28, M30, M32, M34, M36, M38, M42, M48, M72
 
-def _load_font(size: int, bold: bool = False) -> ImageFont.FreeTypeFont:
-    FONT_FILE = Path(__file__).parent.parent.parent / "assets" / "H7GBKHeavy.TTF"
-    candidates = [
-        str(FONT_FILE),
-        "C:/Windows/Fonts/msyhbd.ttc" if bold else "C:/Windows/Fonts/msyh.ttc",
-        "C:/Windows/Fonts/msyh.ttc",
-        "C:/Windows/Fonts/simhei.ttf",
-        "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-    ]
-    for p in candidates:
-        try:
-            return ImageFont.truetype(str(p), size)
-        except Exception:
-            continue
-    return ImageFont.load_default()
-
-F13 = _load_font(13)
-F14 = _load_font(14)
-F16 = _load_font(16)
-F24B = _load_font(24, bold=True)
-F32B = _load_font(32, bold=True)
-
+# 使用包级统一字体对象（从包里导入以复用同一实例）
+from . import F13, F14, F16, F24B, F32B
 def _ty(font, text: str, box_h: int) -> int:
     bb = font.getbbox(text)
     return (box_h - (bb[3] - bb[1])) // 2 - bb[1] + 1
@@ -181,13 +160,13 @@ def render(html: str) -> bytes:
         except Exception: pass
 
     # 全局总高度 = 顶留白 + 容器留白 + 卡片高 + 底留白
-    total_h = 40 + 20 + card_h + (25 + FOOTER_H if f_img else 20) + 40
+    total_h = 10 + 10 + card_h + (15 + FOOTER_H if f_img else 10) + 10
     
     canvas = Image.new("RGBA", (W, total_h), C_BG_PAGE)
     d = ImageDraw.Draw(canvas)
     
     card_x = (W - CARD_W) // 2
-    card_y = 40 + 20
+    card_y = 10 + 10
     
     # 阴影模拟
     shadow = Image.new("RGBA", (CARD_W - 20, card_h - 10), (0, 0, 0, 10))
@@ -224,15 +203,15 @@ def render(html: str) -> bytes:
     info_x = av_x + av_sz + 20
     info_y = sec_y + (user_sec_h - info_h) // 2
     
-    d.text((info_x, info_y - 4), data["user_name"], font=F24B, fill=C_TEXT_MAIN)
+    draw_text_mixed(d, (info_x, info_y - 4), data["user_name"], cn_font=F24B, en_font=M24, fill=C_TEXT_MAIN)
     curr_y = info_y + 24 + 8
     
-    d.text((info_x, curr_y), f"ID: {data['user_id']}", font=F14, fill=C_TEXT_SUB)
+    draw_text_mixed(d, (info_x, curr_y), f"ID: {data['user_id']}", cn_font=F14, en_font=M14, fill=C_TEXT_SUB)
     curr_y += 14 + 8
     
     if sig_lines:
         for line in sig_lines:
-            d.text((info_x, curr_y), line, font=F13, fill=C_SIG)
+            draw_text_mixed(d, (info_x, curr_y), line, cn_font=F13, en_font=M13, fill=C_SIG)
             curr_y += 18
             
     # --- 绘制资产区 ---
@@ -255,8 +234,8 @@ def render(html: str) -> bytes:
     txt_total_w = lbl_w + 15 + val_w
     
     txt_start_x = ass_x + ass_w - 25 - txt_total_w
-    d.text((txt_start_x, ass_y + _ty(F16, "库洛币", 80)), "库洛币", font=F16, fill=(170, 170, 170, 255))
-    d.text((txt_start_x + lbl_w + 15, ass_y + _ty(F32B, data["gold_num"], 80) - 2), data["gold_num"], font=F32B, fill=C_GOLD_TEXT)
+    draw_text_mixed(d, (txt_start_x, ass_y + _ty(F16, "库洛币", 80)), "库洛币", cn_font=F16, en_font=M16, fill=(170, 170, 170, 255))
+    draw_text_mixed(d, (txt_start_x + lbl_w + 15, ass_y + _ty(F32B, data["gold_num"], 80) - 2), data["gold_num"], cn_font=F32B, en_font=M32, fill=C_GOLD_TEXT)
 
     # --- 绘制 Footer ---
     if f_img:

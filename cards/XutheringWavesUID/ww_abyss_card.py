@@ -10,6 +10,7 @@ from pathlib import Path
 
 from bs4 import BeautifulSoup
 from PIL import Image, ImageDraw, ImageFont, ImageOps
+from . import F12, F18, F20, F22, F24, F28, F32, F36, F38, F42, F48, draw_text_mixed, M12, M14, M15, M16, M17, M18, M20, M22, M24, M26, M28, M30, M32, M34, M36, M38, M42, M48, M72
 
 
 # 正则表达式预编译（提升循环内解析性能）
@@ -65,37 +66,7 @@ ROLE_GAP       = 20     # role 间距
 BORDER_RADIUS  = 12     # 圆角半径（通用）
 
 
-# 字体加载
-
-def _load_font(size: int, bold: bool = False) -> ImageFont.FreeTypeFont:
-    FONT_FILE = Path(__file__).parent.parent.parent / "assets" / "H7GBKHeavy.TTF"
-    candidates = [
-        str(FONT_FILE),
-        "C:/Windows/Fonts/msyhbd.ttc" if bold else "C:/Windows/Fonts/msyh.ttc",
-        "C:/Windows/Fonts/msyh.ttc",
-        "C:/Windows/Fonts/simhei.ttf",
-        "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-    ]
-    for p in candidates:
-        try:
-            return ImageFont.truetype(str(p), size)
-        except Exception:
-            continue
-    return ImageFont.load_default()
-
-# 预加载常用字号
-F12  = _load_font(12)
-F18  = _load_font(18)
-F20  = _load_font(20,  bold=True)
-F22  = _load_font(22)
-F24  = _load_font(24,  bold=True)
-F28  = _load_font(28,  bold=True)
-F32  = _load_font(32,  bold=True)
-F36  = _load_font(36,  bold=True)
-F38  = _load_font(38,  bold=True)
-F42  = _load_font(42,  bold=True)
-F48  = _load_font(48,  bold=True)
+# 从包中获取统一字体和常用字号变量（见 cards.XutheringWavesUID.__init__）
 
 def _ty(font, text: str, box_h: int) -> int:
     """计算文字在高度为 box_h 的容器中垂直居中的 y 坐标（修正 PIL bbox top offset）。"""
@@ -339,7 +310,7 @@ def draw_user_card(data: dict) -> Image.Image:
               outline=(212, 177, 99, 160), width=2)
 
     tx = av_x + AV_SIZE + 30
-    d.text((tx, 28), data["name"], font=F48, fill=C_WHITE)
+    draw_text_mixed(d, (tx, 28), data["name"], cn_font=F48, en_font=M48, fill=C_WHITE)
     uid_text = f"UID {data['uid']}"
     bbox = F22.getbbox(uid_text)
     uid_w = (bbox[2] - bbox[0]) + 24
@@ -350,7 +321,7 @@ def draw_user_card(data: dict) -> Image.Image:
                        6, (0, 0, 0, 100))
     d.rectangle([int(uid_x), uid_y, int(uid_x + uid_w), uid_y + uid_h],
                 outline=(212, 177, 99, 50), width=1)
-    d.text((int(uid_x) + 12, uid_y + 5), uid_text, font=F22, fill=C_GOLD)
+    draw_text_mixed(d, (int(uid_x) + 12, uid_y + 5), uid_text, cn_font=F22, en_font=M22, fill=C_GOLD)
 
     sep_y = 88
     d.line([(tx, sep_y), (INNER_W - 30, sep_y)], fill=(255, 255, 255, 20), width=1)
@@ -364,8 +335,8 @@ def draw_user_card(data: dict) -> Image.Image:
         stats.append((f"Lv.{data['world_level']}", "索拉等级"))
     for i, (val, label) in enumerate(stats):
         sx = tx + i * 160
-        d.text((sx, stat_y),      val,   font=F28, fill=C_WHITE)
-        d.text((sx, stat_y + 34), label, font=F12, fill=C_GREY)
+        draw_text_mixed(d, (sx, stat_y),      val,   cn_font=F28, en_font=M28, fill=C_WHITE)
+        draw_text_mixed(d, (sx, stat_y + 34), label, cn_font=F12, en_font=M12, fill=C_GREY)
 
     return card
 
@@ -378,7 +349,7 @@ def draw_section_header(data: dict) -> Image.Image:
     d   = ImageDraw.Draw(img)
 
     title = data["diff_name"]
-    d.text((0, _ty(F36, title, H)), title, font=F36, fill=C_WHITE)
+    draw_text_mixed(d, (0, _ty(F36, title, H)), title, cn_font=F36, en_font=M36, fill=C_WHITE)
     title_w = int(F36.getlength(title))
 
     period_text = f"第{data['period']}期"
@@ -396,11 +367,11 @@ def draw_section_header(data: dict) -> Image.Image:
                        6, (212, 177, 99, 38))
     d.rectangle([pb_x, pb_y, pb_x + period_w, pb_y + 34],
                 outline=(212, 177, 99, 76), width=1)
-    d.text((pb_x + 12, pb_y + _ty(F24, period_text, 34)), period_text, font=F24, fill=C_GOLD)
+    draw_text_mixed(d, (pb_x + 12, pb_y + _ty(F24, period_text, 34)), period_text, cn_font=F24, en_font=M24, fill=C_GOLD)
 
     if data["date_str"]:
-        d.text((pb_x + period_w + 15, pb_y + _ty(F18, data["date_str"], 34)),
-               data["date_str"], font=F18, fill=C_GREY)
+     draw_text_mixed(d, (pb_x + period_w + 15, pb_y + _ty(F18, data["date_str"], 34)),
+         data["date_str"], cn_font=F18, en_font=M18, fill=C_GREY)
 
     d.line([(0, H - 1), (INNER_W, H - 1)], fill=(255, 255, 255, 13), width=1)
 
@@ -432,7 +403,7 @@ def _draw_role_mini(role: dict) -> Image.Image:
     _draw_h_gradient(card, 0, 4, lw + 10, 4 + lh,
                      (0, 0, 0, 216), (0, 0, 0, 0))
     d.rectangle([0, 4, 3, 4 + lh], fill=(212, 177, 99, 255))
-    d.text((6, 4 + _ty(F20, level_text, lh)), level_text, font=F20, fill=C_WHITE)
+    draw_text_mixed(d, (6, 4 + _ty(F20, level_text, lh)), level_text, cn_font=F20, en_font=M20, fill=C_WHITE)
 
     chain_num  = role["chain_num"]
     chain_text = role["chain_str"]
@@ -446,7 +417,7 @@ def _draw_role_mini(role: dict) -> Image.Image:
     _draw_h_gradient(card, cx - 14, cy, RW, cy + ch,
                      (0, 0, 0, 0), (0, 0, 0, 235))
     d.rectangle([RW - 4, cy, RW - 1, cy + ch], fill=(*chain_col, 255))
-    d.text((cx + 2, cy + _ty(F20, chain_text, ch)), chain_text, font=F20, fill=(*text_col, 255))
+    draw_text_mixed(d, (cx + 2, cy + _ty(F20, chain_text, ch)), chain_text, cn_font=F20, en_font=M20, fill=(*text_col, 255))
 
     return card
 
@@ -473,8 +444,8 @@ def draw_floor_item(floor: dict) -> Image.Image:
     RIGHT_W = 3 * ROLE_MINI_W + 2 * ROLE_GAP + 30  
     MID_W   = FW - LEFT_W - RIGHT_W
 
-    d.text((30, _ty(F38, floor["name"], FH)),
-           floor["name"], font=F38, fill=C_WHITE)
+    draw_text_mixed(d, (30, _ty(F38, floor["name"], FH)),
+        floor["name"], cn_font=F38, en_font=M38, fill=C_WHITE)
 
     # 星星逻辑 - 大尺寸 90px
     STAR_SZ      = 90
@@ -532,13 +503,13 @@ def draw_tower_block(tower: dict) -> Image.Image:
                         radius=2, fill=C_GOLD)
 
     tx = 40
-    d.text((tx, _ty(F36, tower["name"], TOWER_HEADER_H)), tower["name"], font=F36, fill=C_GOLD)
+    draw_text_mixed(d, (tx, _ty(F36, tower["name"], TOWER_HEADER_H)), tower["name"], cn_font=F36, en_font=M36, fill=C_GOLD)
 
     star_str  = f"{tower['star']} / {tower['max_star']}"
     star_bbox = F28.getbbox(star_str)
     star_w    = star_bbox[2] - star_bbox[0]
     sx = INNER_W - 30 - star_w
-    d.text((sx, _ty(F28, star_str, TOWER_HEADER_H)), star_str, font=F28, fill=C_WHITE)
+    draw_text_mixed(d, (sx, _ty(F28, star_str, TOWER_HEADER_H)), star_str, cn_font=F28, en_font=M28, fill=C_WHITE)
 
     y = TOWER_HEADER_H + TOWER_GAP
     for floor in tower["floors"]:

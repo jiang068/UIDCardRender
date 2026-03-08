@@ -34,32 +34,10 @@ STAR_COLORS = {
 }
 
 
-# 字体加载
-
-def _load_font(size: int, bold: bool = False) -> ImageFont.FreeTypeFont:
-    FONT_FILE = Path(__file__).parent.parent.parent / "assets" / "H7GBKHeavy.TTF"
-    candidates = [
-        str(FONT_FILE),
-        "C:/Windows/Fonts/msyhbd.ttc" if bold else "C:/Windows/Fonts/msyh.ttc",
-        "C:/Windows/Fonts/msyh.ttc",
-        "C:/Windows/Fonts/simhei.ttf",
-        "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-    ]
-    for p in candidates:
-        try:
-            return ImageFont.truetype(str(p), size)
-        except Exception:
-            continue
-    return ImageFont.load_default()
-
-F12  = _load_font(12)
-F14B = _load_font(14, bold=True)
-F17  = _load_font(17)
-F18B = _load_font(18, bold=True)
-F24B = _load_font(24, bold=True)
-F28B = _load_font(28, bold=True)
-F72B = _load_font(72, bold=True)
+# 使用包级统一字体对象（从包里导入以复用同一实例）
+from . import F12, F14B, F17, F18B, F24B, F28B, F72B
+from . import M12, M14, M17, M18, M24, M28, M72
+from . import draw_text_mixed
 
 def _ty(font, text: str, box_h: int) -> int:
     bb = font.getbbox(text)
@@ -223,12 +201,12 @@ def draw_weapon_card(w_data: dict, width: int) -> Image.Image:
     ty = ic_y + ic_h + 6
     n_trunc = _truncate_text(w_data["name"], F14B, width - 8)
     tw = int(F14B.getlength(n_trunc))
-    d.text(((width - tw)//2, ty), n_trunc, font=F14B, fill=C_WHITE)
+    draw_text_mixed(d, ((width - tw)//2, ty), n_trunc, cn_font=F14B, en_font=M14, fill=C_WHITE)
     
     ty += 20
     e_trunc = _truncate_text(w_data["effect"], F12, width - 8)
     ew = int(F12.getlength(e_trunc))
-    d.text(((width - ew)//2, ty), e_trunc, font=F12, fill=(170,170,170,255))
+    draw_text_mixed(d, ((width - ew)//2, ty), e_trunc, cn_font=F12, en_font=M12, fill=(170,170,170,255))
     
     return img
 
@@ -289,7 +267,7 @@ def render_weapon_view(data: dict) -> Image.Image:
             
             # Title
             d.rectangle([cx + 10, 8, cx + 14, 8 + 24], fill=C_MAIN)
-            d.text((cx + 20, 8), g["title"], font=F24B, fill=C_MAIN)
+            draw_text_mixed(d, (cx + 20, 8), g["title"], cn_font=F24B, en_font=M24, fill=C_MAIN)
             
             # Weapons (Align to top after title)
             cy = 8 + 24 + 8
@@ -336,15 +314,15 @@ def draw_sonata_card(s_data: dict, width: int) -> tuple[Image.Image, int]:
             img.paste(ic, (hx, pad), ic)
         except: pass
         
-    d.text((hx + 56 + 12, pad + _ty(F28B, s_data["name"], 56)), s_data["name"], font=F28B, fill=C_MAIN)
+    draw_text_mixed(d, (hx + 56 + 12, pad + _ty(F28B, s_data["name"], 56)), s_data["name"], cn_font=F28B, en_font=M28, fill=C_MAIN)
     
     # Effects
     ey = pad + hdr_h + 12
     for count, lines in eff_lines:
-        d.text((pad, ey), count, font=F18B, fill=(255,213,79,255))
+        draw_text_mixed(d, (pad, ey), count, cn_font=F18B, en_font=M18, fill=(255,213,79,255))
         cy = ey
         for l in lines:
-            d.text((pad + count_w, cy), l, font=F17, fill=(221,221,221,255))
+            draw_text_mixed(d, (pad + count_w, cy), l, cn_font=F17, en_font=M17, fill=(221,221,221,255))
             cy += 24
         ey += len(lines) * 24 + 6
         
@@ -360,7 +338,7 @@ def render_sonata_view(data: dict) -> Image.Image:
         h_img = Image.new("RGBA", (INNER_W, 40), (0,0,0,0))
         hd = ImageDraw.Draw(h_img)
         title = f"{g['version']} 版本"
-        hd.text((25, 0), title, font=F24B, fill=C_MAIN)
+        draw_text_mixed(hd, (25, 0), title, cn_font=F24B, en_font=M24, fill=C_MAIN)
         hd.rectangle([10, 4, 14, 28], fill=C_MAIN)
         
         # Sonata Grid (3 cols)
@@ -461,7 +439,7 @@ def render(html: str) -> bytes:
     
     # Draw Title
     d = ImageDraw.Draw(canvas)
-    d.text(((W - tw)//2, y), data["title"], font=F72B, fill=C_WHITE)
+    draw_text_mixed(d, ((W - tw)//2, y), data["title"], cn_font=F72B, en_font=M72, fill=C_WHITE)
     y += hdr_h
     
     canvas.alpha_composite(content_img, (PAD, y))

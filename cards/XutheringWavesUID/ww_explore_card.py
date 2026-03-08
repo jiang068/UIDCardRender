@@ -12,7 +12,6 @@ from pathlib import Path
 from bs4 import BeautifulSoup
 from PIL import Image, ImageDraw, ImageFont, ImageOps
 
-
 # 常量定义
 
 W = 1000
@@ -29,38 +28,10 @@ RE_WIDTH = re.compile(r"width:\s*([0-9.]+)%")
 RE_BG_URL = re.compile(r"url\('([^']+)'\)")
 
 
-# 字体加载
-
-def _load_font(size: int, bold: bool = False) -> ImageFont.FreeTypeFont:
-    FONT_FILE = Path(__file__).parent.parent.parent / "assets" / "H7GBKHeavy.TTF"
-    candidates = [
-        str(FONT_FILE),
-        "C:/Windows/Fonts/msyhbd.ttc" if bold else "C:/Windows/Fonts/msyh.ttc",
-        "C:/Windows/Fonts/msyh.ttc",
-        "C:/Windows/Fonts/simhei.ttf",
-        "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-    ]
-    for p in candidates:
-        try:
-            return ImageFont.truetype(str(p), size)
-        except Exception:
-            continue
-    return ImageFont.load_default()
-
-F12  = _load_font(12)
-F14  = _load_font(14)
-F14B = _load_font(14, bold=True)
-F15  = _load_font(15)
-F16B = _load_font(16, bold=True)
-F17B = _load_font(17, bold=True)
-F18B = _load_font(18, bold=True)
-F19B = _load_font(19, bold=True)
-F22B = _load_font(22, bold=True)
-F24B = _load_font(24, bold=True)
-F34B = _load_font(34, bold=True)
-F36B = _load_font(36, bold=True)
-F48B = _load_font(48, bold=True)
+# 使用包级统一字体对象（从包里导入以复用同一实例，避免重复加载）
+from . import F12, F14, F14B, F15, F16B, F17B, F18B, F19B, F22B, F24B, F34B, F36B, F48B
+from . import M12, M14, M15, M16, M17, M18, M19, M22, M24, M34, M36, M48
+from . import draw_text_mixed
 
 def _ty(font, text: str, box_h: int) -> int:
     bb = font.getbbox(text)
@@ -246,7 +217,7 @@ def draw_user_card(data: dict) -> Image.Image:
     card.alpha_composite(_get_h_gradient(INNER_W - 280, H // 2, (212, 177, 99, 0), (212, 177, 99, 38)), (INNER_W - 280, 0))
     
     deco_txt = "SOLARIS EXPEDITION RECORD"
-    d.text((INNER_W - 30 - F14B.getlength(deco_txt), 25), deco_txt, font=F14B, fill=(255, 255, 255, 25))
+    draw_text_mixed(d, (INNER_W - 30 - F14B.getlength(deco_txt), 25), deco_txt, cn_font=F14B, en_font=M14, fill=(255, 255, 255, 25))
 
     AV_SZ = 120
     av_x, av_y = 30, (H - AV_SZ) // 2
@@ -262,7 +233,7 @@ def draw_user_card(data: dict) -> Image.Image:
     d.arc([av_x-8, av_y-8, av_x+AV_SZ+8, av_y+AV_SZ+8], start=135, end=225, fill=C_GOLD, width=2)
 
     tx = av_x + AV_SZ + 30
-    d.text((tx, 35), data["user_name"], font=F48B, fill=C_WHITE)
+    draw_text_mixed(d, (tx, 35), data["user_name"], cn_font=F48B, en_font=M48, fill=C_WHITE)
     
     uid_txt = f"UID {data['uid']}"
     name_w = int(F48B.getlength(data["user_name"]))
@@ -270,7 +241,7 @@ def draw_user_card(data: dict) -> Image.Image:
     
     _draw_rounded_rect(card, tx + name_w + 20, 42, 
                        tx + name_w + 20 + uid_w, 42 + 40, 6, (0, 0, 0, 102), outline=(212, 177, 99, 51))
-    d.text((tx + name_w + 36, 42 + _ty(F24B, uid_txt, 40)), uid_txt, font=F24B, fill=C_GOLD)
+    draw_text_mixed(d, (tx + name_w + 36, 42 + _ty(F24B, uid_txt, 40)), uid_txt, cn_font=F24B, en_font=M24, fill=C_GOLD)
     
     sep_y = 100
     d.line([(tx, sep_y), (INNER_W - 30, sep_y)], fill=(255, 255, 255, 20), width=1)
@@ -278,8 +249,8 @@ def draw_user_card(data: dict) -> Image.Image:
     
     for i, (val, label) in enumerate(data["stats"]):
         sx = tx + i * 160
-        d.text((sx, 115), val, font=F36B, fill=C_WHITE)
-        d.text((sx, 155), label, font=F14B, fill=(109, 113, 122, 255))
+        draw_text_mixed(d, (sx, 115), val, cn_font=F36B, en_font=M36, fill=C_WHITE)
+        draw_text_mixed(d, (sx, 155), label, cn_font=F14B, en_font=M14, fill=(109, 113, 122, 255))
 
     card.paste(Image.new("RGBA", (INNER_W, 16), (25, 28, 34, 230)), (0, 0))
     return card
@@ -302,8 +273,8 @@ def draw_completed_card(area: dict) -> Image.Image:
     max_nw = ITEM_W - 12 - 10 - pw - 10
     
     name_txt = _truncate_text(area["name"], F15, max_nw)
-    d.text((nx, _ty(F15, name_txt, H)), name_txt, font=F15, fill=(170, 170, 170, 255))
-    d.text((ITEM_W - 12 - pw, _ty(F16B, area["progress"], H)), area["progress"], font=F16B, fill=area["color"])
+    draw_text_mixed(d, (nx, _ty(F15, name_txt, H)), name_txt, cn_font=F15, en_font=M15, fill=(170, 170, 170, 255))
+    draw_text_mixed(d, (ITEM_W - 12 - pw, _ty(F16B, area["progress"], H)), area["progress"], cn_font=F16B, en_font=M16, fill=area["color"])
     return img
 
 def draw_incomplete_card(area: dict) -> Image.Image:
@@ -319,10 +290,10 @@ def draw_incomplete_card(area: dict) -> Image.Image:
     d.rectangle([0, 0, 3, H], fill=area["color"])
     
     name_txt = _truncate_text(area["name"], F17B, ITEM_W - 100)
-    d.text((12, 8), name_txt, font=F17B, fill=(224, 224, 224, 255))
+    draw_text_mixed(d, (12, 8), name_txt, cn_font=F17B, en_font=M17, fill=(224, 224, 224, 255))
     
     pw = int(F19B.getlength(area["progress"]))
-    d.text((ITEM_W - 10 - pw, 6), area["progress"], font=F19B, fill=area["color"])
+    draw_text_mixed(d, (ITEM_W - 10 - pw, 6), area["progress"], cn_font=F19B, en_font=M19, fill=area["color"])
     
     if items:
         y = 35 + 8
@@ -342,10 +313,10 @@ def draw_incomplete_card(area: dict) -> Image.Image:
             idx_x = 14 + 32 + 8
             
             it_name = _truncate_text(it["name"], F14B, ITEM_W - idx_x - 60)
-            d.text((idx_x, y + 6), it_name, font=F14B, fill=(221, 221, 221, 255))
+            draw_text_mixed(d, (idx_x, y + 6), it_name, cn_font=F14B, en_font=M14, fill=(221, 221, 221, 255))
             
             it_pw = int(F14B.getlength(it["progress"]))
-            d.text((ITEM_W - 14 - it_pw, y + 6), it["progress"], font=F14B, fill=(153, 153, 153, 255))
+            draw_text_mixed(d, (ITEM_W - 14 - it_pw, y + 6), it["progress"], cn_font=F14B, en_font=M14, fill=(153, 153, 153, 255))
             
             bar_y = y + 28
             bar_w = ITEM_W - idx_x - 14
@@ -408,12 +379,12 @@ def draw_region_card(reg: dict) -> Image.Image:
             ix_off += 70 + 25
         except Exception: pass
         
-    hd.text((ix_off, 25), reg["name"], font=F34B, fill=C_WHITE)
-    hd.text((ix_off, 68), f"探索度 {reg['progress']}%", font=F22B, fill=(238, 238, 238, 255))
+    draw_text_mixed(hd, (ix_off, 25), reg["name"], cn_font=F34B, en_font=M34, fill=C_WHITE)
+    draw_text_mixed(hd, (ix_off, 68), f"探索度 {reg['progress']}" if "%" in reg['progress'] else f"探索度 {reg['progress']}%", cn_font=F22B, en_font=M22, fill=(238, 238, 238, 255))
     
     tw = int(F18B.getlength(reg["tag"])) + 32
     _draw_rounded_rect(hdr, INNER_W - 30 - tw, 42, INNER_W - 30, 42 + 36, 4, (255, 255, 255, 25), outline=(255, 255, 255, 51))
-    hd.text((INNER_W - 30 - tw + 16, 42 + _ty(F18B, reg["tag"], 36)), reg["tag"], font=F18B, fill=C_WHITE)
+    draw_text_mixed(hd, (INNER_W - 30 - tw + 16, 42 + _ty(F18B, reg["tag"], 36)), reg["tag"], cn_font=F18B, en_font=M18, fill=C_WHITE)
     
     img.paste(hdr, (0, 0), _round_mask(INNER_W, HEADER_H, 12))
     img.paste(hdr.crop((0, HEADER_H - 12, INNER_W, HEADER_H)), (0, HEADER_H - 12))

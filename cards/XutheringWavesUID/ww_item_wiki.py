@@ -28,33 +28,10 @@ C_CARD_BG = (20, 20, 25, 166)  # rgba(20,20,25,0.65)
 C_BORDER = (255, 255, 255, 38) # rgba(255,255,255,0.15)
 
 
-# 字体加载
-
-def _load_font(size: int, bold: bool = False) -> ImageFont.FreeTypeFont:
-    FONT_FILE = Path(__file__).parent.parent.parent / "assets" / "H7GBKHeavy.TTF"
-    candidates = [
-        str(FONT_FILE),
-        "C:/Windows/Fonts/msyhbd.ttc" if bold else "C:/Windows/Fonts/msyh.ttc",
-        "C:/Windows/Fonts/msyh.ttc",
-        "C:/Windows/Fonts/simhei.ttf",
-        "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-    ]
-    for p in candidates:
-        try:
-            return ImageFont.truetype(str(p), size)
-        except Exception:
-            continue
-    return ImageFont.load_default()
-
-F16  = _load_font(16)
-F18  = _load_font(18)
-F18B = _load_font(18, bold=True)
-F20B = _load_font(20, bold=True)
-F22  = _load_font(22)
-F22B = _load_font(22, bold=True)
-F36B = _load_font(36, bold=True)
-F72B = _load_font(72, bold=True)
+# 使用包级统一字体对象（从包里导入以复用同一实例）
+from . import F16, F18, F18B, F20B, F22, F22B, F36B, F72B
+from . import M16, M18, M20, M22, M36, M72
+from . import draw_text_mixed
 
 def _ty(font, text: str, box_h: int) -> int:
     bb = font.getbbox(text)
@@ -242,7 +219,7 @@ def draw_left_col(data: dict, force_height: int = 0) -> Image.Image:
         d.rectangle([0, st_y, 4, final_h], fill=data["main_color"])
         
         # Title
-        d.text((24, st_y + pad), data["stats_title"], font=F20B, fill=(230,230,230,255))
+        draw_text_mixed(d, (24, st_y + pad), data["stats_title"], cn_font=F20B, en_font=M20, fill=(230,230,230,255))
         
         # Title line
         tw = int(F20B.getlength(data["stats_title"]))
@@ -251,9 +228,9 @@ def draw_left_col(data: dict, force_height: int = 0) -> Image.Image:
         
         cy = st_y + pad + 20 + 16
         for lb, vl in data["stats"]:
-            d.text((24 + 4, cy + _ty(F18, lb, 36)), lb, font=F18, fill=C_TEXT_SUB)
+            draw_text_mixed(d, (24 + 4, cy + _ty(F18, lb, 36)), lb, cn_font=F18, en_font=M18, fill=C_TEXT_SUB)
             vw = int(F20B.getlength(vl))
-            d.text((LEFT_W - 24 - 4 - vw, cy + _ty(F20B, vl, 36)), vl, font=F20B, fill=C_WHITE)
+            draw_text_mixed(d, (LEFT_W - 24 - 4 - vw, cy + _ty(F20B, vl, 36)), vl, cn_font=F20B, en_font=M20, fill=C_WHITE)
             
             d.line([(24, cy + 36), (LEFT_W - 24, cy + 36)], fill=(255,255,255,13), width=1)
             cy += 36 + 8
@@ -282,7 +259,7 @@ def draw_right_col(data: dict) -> tuple[Image.Image, int]:
     d_top = ImageDraw.Draw(top_img)
     
     # Draw Title
-    d_top.text((0, 0), data["name"], font=F72B, fill=C_WHITE)
+    draw_text_mixed(d_top, (0, 0), data["name"], cn_font=F72B, en_font=M72, fill=C_WHITE)
     
     # Draw Tags
     rx = 0
@@ -305,7 +282,7 @@ def draw_right_col(data: dict) -> tuple[Image.Image, int]:
             ti_inv.putalpha(ti.split()[3])
             top_img.paste(ti_inv, (rx + 18, ry + 8), ti_inv)
         except: pass
-        d_top.text((rx + 18 + 36 + 8, ry + _ty(F22B, data["type_name"], 52)), data["type_name"], font=F22B, fill=(230,230,230,255))
+        draw_text_mixed(d_top, (rx + 18 + 36 + 8, ry + _ty(F22B, data["type_name"], 52)), data["type_name"], cn_font=F22B, en_font=M22, fill=(230,230,230,255))
         
     if data["item_type"] == "echo" and data["group_icons"]:
         for gr in data["group_icons"]:
@@ -317,7 +294,7 @@ def draw_right_col(data: dict) -> tuple[Image.Image, int]:
                     gi = _b64_fit(gr["icon"], 32, 32)
                     top_img.paste(gi, (rx + 18, ry + 8), gi)
                 except: pass
-            d_top.text((rx + 18 + 32 + 8, ry + _ty(F20B, gr["name"], 48)), gr["name"], font=F20B, fill=(230,230,230,255))
+            draw_text_mixed(d_top, (rx + 18 + 32 + 8, ry + _ty(F20B, gr["name"], 48)), gr["name"], cn_font=F20B, en_font=M20, fill=(230,230,230,255))
             rx += w_tag + 10
 
     # Draw Mats (Right aligned)
@@ -326,7 +303,7 @@ def draw_right_col(data: dict) -> tuple[Image.Image, int]:
         _draw_rounded_rect(top_img, mx, 0, RIGHT_W, mats_h, 12, (0,0,0,76), outline=C_BORDER)
         
         tw = int(F18B.getlength("突破材料"))
-        d_top.text((RIGHT_W - 20 - tw, 18), "突破材料", font=F18B, fill=C_TEXT_SUB)
+        draw_text_mixed(d_top, (RIGHT_W - 20 - tw, 18), "突破材料", cn_font=F18B, en_font=M18, fill=C_TEXT_SUB)
         
         my = 18 + 18 + 12
         cx = RIGHT_W - 20 - (min(len(data["mats"]), 4) * 72 + max(0, min(len(data["mats"]), 4)-1)*12)
@@ -371,16 +348,16 @@ def draw_right_col(data: dict) -> tuple[Image.Image, int]:
         _draw_rounded_rect(det_img, 0, 0, RIGHT_W, det_h, 12, C_CARD_BG, outline=C_BORDER)
         
         dy = pad
-        dd.text((pad, dy), title_txt, font=F16, fill=(170,170,170,255))
+        draw_text_mixed(dd, (pad, dy), title_txt, cn_font=F16, en_font=M16, fill=(170,170,170,255))
         dy += 16 + 10
         
         if data["effect_name"]:
             # Fake golden gradient text
-            dd.text((pad, dy), data["effect_name"], font=F36B, fill=(255, 236, 179, 255))
+            draw_text_mixed(dd, (pad, dy), data["effect_name"], cn_font=F36B, en_font=M36, fill=(255, 236, 179, 255))
             dy += 36 + 20
             
         for l in lines:
-            dd.text((pad, dy + _ty(F22, l, LH)), l, font=F22, fill=C_DESC)
+            draw_text_mixed(dd, (pad, dy + _ty(F22, l, LH)), l, cn_font=F22, en_font=M22, fill=C_DESC)
             dy += LH
 
     total_h = top_h + 24 + (det_h if det_img else 0)

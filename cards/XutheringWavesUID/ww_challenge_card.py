@@ -61,36 +61,10 @@ ROLE_MINI_SZ   = 80
 ROLE_GAP       = 10
 
 
-# 字体加载
+from . import draw_text_mixed, M10, M12, M14, M15, M16, M17, M18, M20, M22, M24, M26, M28, M30, M32, M34, M36, M38, M42, M48, M72
 
-def _load_font(size: int, bold: bool = False) -> ImageFont.FreeTypeFont:
-    FONT_FILE = Path(__file__).parent.parent.parent / "assets" / "H7GBKHeavy.TTF"
-    candidates = [
-        str(FONT_FILE),
-        "C:/Windows/Fonts/msyhbd.ttc" if bold else "C:/Windows/Fonts/msyh.ttc",
-        "C:/Windows/Fonts/msyh.ttc",
-        "C:/Windows/Fonts/simhei.ttf",
-        "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-    ]
-    for p in candidates:
-        try:
-            return ImageFont.truetype(str(p), size)
-        except Exception:
-            continue
-    return ImageFont.load_default()
-
-F10  = _load_font(10, bold=True)
-F12  = _load_font(12, bold=True)
-F14  = _load_font(14, bold=True)
-F18  = _load_font(18)
-F20  = _load_font(20, bold=True)
-F22  = _load_font(22)
-F24  = _load_font(24, bold=True)
-F28  = _load_font(28, bold=True)
-F30  = _load_font(30, bold=True)
-F36  = _load_font(36, bold=True)
-F48  = _load_font(48, bold=True)
+# 使用包级统一字体对象（从包里导入以复用同一实例）
+from . import F10, F12, F14, F18, F20, F22, F24, F28, F30, F36, F48
 
 def _ty(font, text: str, box_h: int) -> int:
     bb = font.getbbox(text)
@@ -284,7 +258,7 @@ def draw_user_card(data: dict) -> Image.Image:
               outline=(212, 177, 99, 160), width=2)
 
     tx = av_x + AV_SIZE + 30
-    d.text((tx, 28), data["name"], font=F48, fill=C_WHITE)
+    draw_text_mixed(d, (tx, 28), data["name"], cn_font=F48, en_font=M48, fill=C_WHITE)
     
     uid_text = f"UID {data['uid']}"
     uid_w = F22.getlength(uid_text) + 24
@@ -293,11 +267,11 @@ def draw_user_card(data: dict) -> Image.Image:
     uid_y = 36
     _draw_rounded_rect(card, int(uid_x), uid_y, int(uid_x + uid_w), uid_y + uid_h, 6, (0, 0, 0, 100))
     d.rectangle([int(uid_x), uid_y, int(uid_x + uid_w), uid_y + uid_h], outline=(212, 177, 99, 50), width=1)
-    d.text((int(uid_x) + 12, uid_y + 5), uid_text, font=F22, fill=C_GOLD)
+    draw_text_mixed(d, (int(uid_x) + 12, uid_y + 5), uid_text, cn_font=F22, en_font=M22, fill=C_GOLD)
 
     # 装饰文字
     deco_text = "CHALLENGE REPORT"
-    d.text((INNER_W - 30 - F14.getlength(deco_text), 20), deco_text, font=F14, fill=(255, 255, 255, 25))
+    draw_text_mixed(d, (INNER_W - 30 - F14.getlength(deco_text), 20), deco_text, cn_font=F14, en_font=M14, fill=(255, 255, 255, 25))
 
     sep_y = 88
     d.line([(tx, sep_y), (INNER_W - 30, sep_y)], fill=(255, 255, 255, 20), width=1)
@@ -310,8 +284,8 @@ def draw_user_card(data: dict) -> Image.Image:
     
     for i, (val, label) in enumerate(stats):
         sx = tx + i * 160
-        d.text((sx, stat_y), val, font=F28, fill=C_WHITE)
-        d.text((sx, stat_y + 34), label, font=F12, fill=C_GREY)
+        draw_text_mixed(d, (sx, stat_y), val, cn_font=F28, en_font=M28, fill=C_WHITE)
+        draw_text_mixed(d, (sx, stat_y + 34), label, cn_font=F12, en_font=M12, fill=C_GREY)
 
     return card
 
@@ -321,7 +295,7 @@ def draw_section_header(date_str: str) -> Image.Image:
     d   = ImageDraw.Draw(img)
 
     title = "全息战略"
-    d.text((0, _ty(F30, title, H)), title, font=F30, fill=C_WHITE)
+    draw_text_mixed(d, (0, _ty(F30, title, H)), title, cn_font=F30, en_font=M30, fill=C_WHITE)
     title_w = int(F30.getlength(title))
 
     date_w   = int(F18.getlength(date_str)) + 20 if date_str else 0
@@ -333,7 +307,7 @@ def draw_section_header(date_str: str) -> Image.Image:
                      (212, 177, 99, 204), (212, 177, 99, 0))
 
     if date_str:
-        d.text((right_x + 10, _ty(F18, date_str, H)), date_str, font=F18, fill=C_GREY)
+        draw_text_mixed(d, (right_x + 10, _ty(F18, date_str, H)), date_str, cn_font=F18, en_font=M18, fill=C_GREY)
 
     d.line([(0, H - 1), (img.width, H - 1)], fill=(255, 255, 255, 13), width=1)
     return img
@@ -361,7 +335,7 @@ def _draw_qx_role_mini(role: dict) -> Image.Image:
     lh = 16
     _draw_h_gradient(card, 0, 4, lw + 10, 4 + lh, (0, 0, 0, 216), (0, 0, 0, 0))
     d.rectangle([0, 4, 2, 4 + lh], fill=C_GOLD)
-    d.text((4, 4 + _ty(F12, lvl_txt, lh)), lvl_txt, font=F12, fill=C_WHITE)
+    draw_text_mixed(d, (4, 4 + _ty(F12, lvl_txt, lh)), lvl_txt, cn_font=F12, en_font=M12, fill=C_WHITE)
 
     # 右下命座
     chain_num  = role["chain_num"]
@@ -375,7 +349,7 @@ def _draw_qx_role_mini(role: dict) -> Image.Image:
     
     _draw_h_gradient(card, cx - 10, cy, SZ, cy + ch, (0, 0, 0, 0), (0, 0, 0, 230))
     d.rectangle([SZ - 3, cy, SZ, cy + ch], fill=(*chain_col, 255))
-    d.text((cx + 2, cy + _ty(F12, chain_text, ch)), chain_text, font=F12, fill=(*text_col, 255))
+    draw_text_mixed(d, (cx + 2, cy + _ty(F12, chain_text, ch)), chain_text, cn_font=F12, en_font=M12, fill=(*text_col, 255))
 
     return card
 
@@ -390,22 +364,22 @@ def draw_challenge_item(ch: dict) -> Image.Image:
     _draw_h_gradient(img, 0, 0, ITEM_W, 64, (0, 0, 0, 76), (0, 0, 0, 0))
     d.line([(0, 64), (ITEM_W, 64)], fill=(255, 255, 255, 10), width=1)
     
-    d.text((18, 10), ch["boss_name"], font=F24, fill=C_WHITE)
-    d.text((18, 40), f"Lv.{ch['boss_level']}", font=F14, fill=C_GOLD)
+    draw_text_mixed(d, (18, 10), ch["boss_name"], cn_font=F24, en_font=M24, fill=C_WHITE)
+    draw_text_mixed(d, (18, 40), f"Lv.{ch['boss_level']}", cn_font=F14, en_font=M14, fill=C_GOLD)
 
     # 右侧时间与难度
     time_val = ch["pass_time"]
     tw = int(F24.getlength(time_val))
     time_x = ITEM_W - 18 - tw
-    d.text((time_x, 14), "TIME", font=F10, fill=C_GOLD)
-    d.text((time_x, 26), time_val, font=F24, fill=C_WHITE)
+    draw_text_mixed(d, (time_x, 14), "TIME", cn_font=F10, en_font=M10, fill=C_GOLD)
+    draw_text_mixed(d, (time_x, 26), time_val, cn_font=F24, en_font=M24, fill=C_WHITE)
 
     diff_txt = f"难度 {ch['boss_difficulty']}/{ch['max_difficulty']}"
     dw = int(F20.getlength(diff_txt)) + 16
     dx = time_x - 15 - dw
     _draw_rounded_rect(img, dx, 16, dx + dw, 44, 4, (255, 255, 255, 13))
     d.rectangle([dx, 16, dx + dw, 44], outline=(255, 255, 255, 25), width=1)
-    d.text((dx + 8, 16 + _ty(F20, diff_txt, 28)), diff_txt, font=F20, fill=(170, 170, 170, 255))
+    draw_text_mixed(d, (dx + 8, 16 + _ty(F20, diff_txt, 28)), diff_txt, cn_font=F20, en_font=M20, fill=(170, 170, 170, 255))
 
     # --- Body (64 ~ 194) ---
     b_img_sz = (130, 100)

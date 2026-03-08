@@ -25,37 +25,10 @@ C_TEXT_SUB  = (149, 165, 166, 255)  # #95a5a6
 RE_COLOR = re.compile(r"(?:color|background):\s*([^;]+)")
 
 
-# 字体加载
+from . import draw_text_mixed, M12, M14, M15, M16, M17, M18, M20, M22, M24, M26, M28, M30, M32, M34, M36, M38, M42, M48, M72
 
-def _load_font(size: int, bold: bool = False) -> ImageFont.FreeTypeFont:
-    FONT_FILE = Path(__file__).parent.parent.parent / "assets" / "H7GBKHeavy.TTF"
-    candidates = [
-        str(FONT_FILE),
-        "C:/Windows/Fonts/msyhbd.ttc" if bold else "C:/Windows/Fonts/msyh.ttc",
-        "C:/Windows/Fonts/msyh.ttc",
-        "C:/Windows/Fonts/simhei.ttf",
-        "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-    ]
-    for p in candidates:
-        try:
-            return ImageFont.truetype(str(p), size)
-        except Exception:
-            continue
-    return ImageFont.load_default()
-
-F11 = _load_font(11, bold=True)
-F12 = _load_font(12)
-F12B = _load_font(12, bold=True)
-F13 = _load_font(13)
-F14 = _load_font(14)
-F14B = _load_font(14, bold=True)
-F20 = _load_font(20)
-F20B = _load_font(20, bold=True)
-F22B = _load_font(22, bold=True)
-F26B = _load_font(26, bold=True)
-F28B = _load_font(28, bold=True)
-
+# 使用包级统一字体对象（从包里导入以复用同一实例）
+from . import F11, F12, F12B, F13, F14, F14B, F20, F20B, F22B, F26B, F28B
 def _ty(font, text: str, box_h: int) -> int:
     bb = font.getbbox(text)
     return (box_h - (bb[3] - bb[1])) // 2 - bb[1] + 1
@@ -250,7 +223,7 @@ def draw_header(data: dict) -> Image.Image:
         x_offset = 30
 
     if not data["is_list"] and data["title"]:
-        d.text((x_offset, y_offset + _ty(F28B, data["title"], 60)), data["title"], font=F28B, fill=(255, 255, 255, 255))
+        draw_text_mixed(d, (x_offset, y_offset + _ty(F28B, data["title"], 60)), data["title"], cn_font=F28B, en_font=M28, fill=(255, 255, 255, 255))
 
     y_offset += 60 + 12
 
@@ -258,7 +231,7 @@ def draw_header(data: dict) -> Image.Image:
     if data["is_list"] and data["subtitle"]:
         stw = int(F14.getlength(data["subtitle"]))
         _draw_rounded_rect(img, 30, y_offset, 30 + stw + 24, y_offset + 26, 4, (255, 255, 255, 25))
-        d.text((30 + 12, y_offset + _ty(F14, data["subtitle"], 26)), data["subtitle"], font=F14, fill=(255, 255, 255, 178))
+    draw_text_mixed(d, (30 + 12, y_offset + _ty(F14, data["subtitle"], 26)), data["subtitle"], cn_font=F14, en_font=M14, fill=(255, 255, 255, 178))
 
     return img
 
@@ -284,9 +257,9 @@ def draw_user_info(data: dict) -> Image.Image:
     d.ellipse([av_x, av_y, av_x + av_sz, av_y + av_sz], outline=(52, 152, 219, 255), width=2)
     
     tx = av_x + av_sz + 18
-    d.text((tx, av_y + 8), data["user_name"], font=F22B, fill=C_TEXT_MAIN)
+    draw_text_mixed(d, (tx, av_y + 8), data["user_name"], cn_font=F22B, en_font=M22, fill=C_TEXT_MAIN)
     if data["user_meta"]:
-        d.text((tx, av_y + 40), data["user_meta"], font=F14, fill=C_TEXT_SUB)
+        draw_text_mixed(d, (tx, av_y + 40), data["user_meta"], cn_font=F14, en_font=M14, fill=C_TEXT_SUB)
         
     return img
 
@@ -300,10 +273,10 @@ def draw_list_view(sections: list) -> Image.Image:
         td = ImageDraw.Draw(t_img)
         if sec["name"]:
             td.rectangle([25, 20, 31, 20 + 26], fill=sec["color"])
-            td.text((43, 20 + _ty(F26B, sec["name"], 26)), sec["name"], font=F26B, fill=(26, 26, 26, 255))
+            draw_text_mixed(td, (43, 20 + _ty(F26B, sec["name"], 26)), sec["name"], cn_font=F26B, en_font=M26, fill=(26, 26, 26, 255))
             ew = int(F26B.getlength(sec["name"]))
             if sec["en"]:
-                td.text((43 + ew + 12, 20 + _ty(F12B, sec["en"], 26) + 4), sec["en"], font=F12B, fill=(149, 165, 166, 204))
+                draw_text_mixed(td, (43 + ew + 12, 20 + _ty(F12B, sec["en"], 26) + 4), sec["en"], cn_font=F12B, en_font=M12, fill=(149, 165, 166, 204))
         blocks.append(t_img)
 
         # 2. Grid items
@@ -341,16 +314,16 @@ def draw_list_view(sections: list) -> Image.Image:
                 _draw_rounded_rect(card, 0, 0, bw, 20, 0, sec["color"])
                 # Right bottom radius for badge
                 card.paste(Image.new("RGBA", (10, 10), sec["color"]), (bw-10, 10), _round_mask(10, 10, 10))
-                cd.text((10, _ty(F12B, item["id_text"], 20)), item["id_text"], font=F12B, fill=C_BG_CARD)
+                draw_text_mixed(cd, (10, _ty(F12B, item["id_text"], 20)), item["id_text"], cn_font=F12B, en_font=M12, fill=C_BG_CARD)
 
             # Info (Title + Date)
             lines = _wrap_paragraphs(item["title"], F14B, ITEM_W - 24)
             y_txt = 110 + 12
             for line in lines[:2]: # Max 2 lines
-                cd.text((12, y_txt), line, font=F14B, fill=C_TEXT_MAIN)
+                draw_text_mixed(cd, (12, y_txt), line, cn_font=F14B, en_font=M14, fill=C_TEXT_MAIN)
                 y_txt += 20
             
-            cd.text((ITEM_W - 12 - int(F12.getlength(item["date"])), ITEM_H - 12 - 16), item["date"], font=F12, fill=C_TEXT_SUB)
+            draw_text_mixed(cd, (ITEM_W - 12 - int(F12.getlength(item["date"])), ITEM_H - 12 - 16), item["date"], cn_font=F12, en_font=M12, fill=C_TEXT_SUB)
             
             # Outline
             cd.rounded_rectangle([0, 0, ITEM_W-1, ITEM_H-1], radius=10, outline=(0, 0, 0, 15), width=1)
@@ -383,7 +356,7 @@ def draw_detail_view(blocks_data: list) -> Image.Image:
             d = ImageDraw.Draw(img)
             cy = 0
             for line in lines:
-                if line: d.text((PAD_X, cy + _ty(F20, line, LH)), line, font=F20, fill=(51, 51, 51, 255))
+                if line: draw_text_mixed(d, (PAD_X, cy + _ty(F20, line, LH)), line, cn_font=F20, en_font=M20, fill=(51, 51, 51, 255))
                 cy += LH
             drawn_blocks.append(img)
             
@@ -409,7 +382,7 @@ def draw_detail_view(blocks_data: list) -> Image.Image:
                     vw, vh = 70, 24
                     vx, vy = PAD_X + MAX_W - vw - 10, 4 + new_h - vh - 10
                     _draw_rounded_rect(img, vx, vy, vx + vw, vy + vh, 12, (0, 0, 0, 190))
-                    d.text((vx + 10, vy + _ty(F11, "▶ 视频", vh)), "▶ 视频", font=F11, fill=C_BG_CARD)
+                    draw_text_mixed(d, (vx + 10, vy + _ty(F11, "▶ 视频", vh)), "▶ 视频", cn_font=F11, en_font=M11, fill=C_BG_CARD)
                     
                 drawn_blocks.append(img)
             except Exception as e:

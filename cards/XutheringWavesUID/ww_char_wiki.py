@@ -25,35 +25,10 @@ C_CARD_BG = (20, 20, 25, 216)  # rgba(20,20,25,0.85)
 C_TEXT_SUB = (160, 160, 160, 255) # 对应 CSS 的 #a0a0a0
 
 
-# 字体加载
+from . import draw_text_mixed, M12, M13, M14, M15, M16, M17, M18, M20, M22, M24, M26, M28, M30, M32, M34, M36, M38, M42, M48, M72, M80
 
-def _load_font(size: int, bold: bool = False) -> ImageFont.FreeTypeFont:
-    FONT_FILE = Path(__file__).parent.parent.parent / "assets" / "H7GBKHeavy.TTF"
-    candidates = [
-        str(FONT_FILE),
-        "C:/Windows/Fonts/msyhbd.ttc" if bold else "C:/Windows/Fonts/msyh.ttc",
-        "C:/Windows/Fonts/msyh.ttc",
-        "C:/Windows/Fonts/simhei.ttf",
-        "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-    ]
-    for p in candidates:
-        try:
-            return ImageFont.truetype(str(p), size)
-        except Exception:
-            continue
-    return ImageFont.load_default()
-
-F13  = _load_font(13)
-F13B = _load_font(13, bold=True)
-F14B = _load_font(14, bold=True)
-F16  = _load_font(16)
-F18B = _load_font(18, bold=True)
-F20  = _load_font(20)
-F20B = _load_font(20, bold=True)
-F24B = _load_font(24, bold=True)
-F28B = _load_font(28, bold=True)
-F80B = _load_font(80, bold=True)
+# 使用包级统一字体对象（从包里导入以复用同一实例）
+from . import F13, F13B, F14B, F16, F18B, F20, F20B, F24B, F28B, F80B
 
 def _ty(font, text: str, box_h: int) -> int:
     bb = font.getbbox(text)
@@ -146,25 +121,18 @@ def _get_v_gradient(w: int, h: int, top_rgba: tuple, bottom_rgba: tuple) -> Imag
 # 富文本排版引擎 (Rich Text Parser & Renderer)
 
 def _render_rich_text(html_snippet: str, max_w: int, main_color: tuple) -> Image.Image:
-    """
-    处理 <div class="card-desc"> 里的 HTML 混排。
-    支持: 纯文本, <br>, <strong> (高亮色), <img class="inline-icon">, <span class="key-input">
-    """
     soup = BeautifulSoup(html_snippet, "html.parser")
     
-    # 解析节点序列
     tokens = []
     for el in soup.descendants:
         if isinstance(el, NavigableString):
             txt = str(el)
             if txt:
-                # 按照空格或换行切分为小词块，方便换行 (保留纯 \n 为独立换行符)
                 parts = re.split(r'(\n)', txt)
                 for p in parts:
                     if p == '\n':
                         tokens.append({"type": "br"})
                     elif p.strip():
-                        # 判断父节点是否是 strong
                         is_strong = el.parent.name in ['strong', 'b']
                         is_key = el.parent.name == 'span' and 'key-input' in el.parent.get('class', [])
                         
@@ -184,11 +152,10 @@ def _render_rich_text(html_snippet: str, max_w: int, main_color: tuple) -> Image
         elif el.name == 'br':
             tokens.append({"type": "br"})
 
-    # 流式排版
     lines = []
     curr_line = []
     curr_x = 0
-    LH = 32 # Line height 1.6 * 20px
+    LH = 32 
     
     for t in tokens:
         if t["type"] == "br":
@@ -198,7 +165,6 @@ def _render_rich_text(html_snippet: str, max_w: int, main_color: tuple) -> Image
             continue
             
         if t["type"] == "img":
-            # Icon size roughly match font size (1.4em of 20px = 28px)
             iw, ih = 28, 28
             if curr_x + iw + 4 > max_w and curr_line:
                 lines.append(curr_line)
@@ -215,7 +181,6 @@ def _render_rich_text(html_snippet: str, max_w: int, main_color: tuple) -> Image
             
             for char in words:
                 cw = font.getlength(buf + char)
-                # 额外算上 key-input 的边距
                 pad = 12 if t["is_key"] else 0
                 
                 if curr_x + cw + pad > max_w:
@@ -257,7 +222,6 @@ def _render_rich_text(html_snippet: str, max_w: int, main_color: tuple) -> Image
             if it["type"] == "img":
                 try:
                     ic = _b64_fit(it["src"], it["w"], it["h"])
-                    # vertical align middle
                     img.paste(ic, (int(it["px"]), cy + (LH - it["h"]) // 2))
                 except: pass
             elif it["type"] == "text":
@@ -267,9 +231,11 @@ def _render_rich_text(html_snippet: str, max_w: int, main_color: tuple) -> Image
                     kx = int(it["px"])
                     ky = cy + (LH - kh) // 2
                     _draw_rounded_rect(img, kx, ky, kx + kw, ky + kh, 4, (255,255,255,38), outline=(255,255,255,51))
-                    d.text((kx + 6, ky + _ty(it["font"], it["text"], kh)), it["text"], font=it["font"], fill=it["color"])
+                    en_font = globals().get(f"M{getattr(it['font'], 'size', None)}", None)
+                    draw_text_mixed(d, (kx + 6, ky + _ty(it["font"], it["text"], kh)), it["text"], cn_font=it["font"], en_font=en_font, fill=it["color"])
                 else:
-                    d.text((int(it["px"]), cy + _ty(it["font"], it["text"], LH)), it["text"], font=it["font"], fill=it["color"])
+                    en_font = globals().get(f"M{getattr(it['font'], 'size', None)}", None)
+                    draw_text_mixed(d, (int(it["px"]), cy + _ty(it["font"], it["text"], LH)), it["text"], cn_font=it["font"], en_font=en_font, fill=it["color"])
         cy += LH
         
     return img
@@ -287,16 +253,13 @@ def parse_html(html: str) -> dict:
     col_m = re.search(r"--main-color:\s*([^;]+);", style_text)
     main_color = parse_color(col_m.group(1), (212, 177, 99, 255)) if col_m else (212, 177, 99, 255)
     
-    # Detect Section
     section = "skill"
     if soup.select_one(".section-title") and "共鸣链" in soup.select_one(".section-title").get_text():
         section = "chain"
     elif soup.select_one(".section-title") and "核心机制" in soup.select_one(".section-title").get_text():
         section = "forte"
 
-    # Header Data
     char_name = soup.select_one(".char-name").get_text(strip=True) if soup.select_one(".char-name") else ""
-    
     rarity_icon = soup.select_one(".rarity-icon").get("src") if soup.select_one(".rarity-icon") else ""
     
     tags = soup.select(".info-tag")
@@ -319,22 +282,16 @@ def parse_html(html: str) -> dict:
     portrait = soup.select_one(".char-portrait").get("src") if soup.select_one(".char-portrait") else ""
     footer = soup.select_one(".footer img").get("src") if soup.select_one(".footer img") else ""
 
-    # Collect Cards based on Section
     cards_data = []
-    
-    # Forte specific
     forte_features = []
     
     if section == "skill":
         for card in soup.select(".card-list > .card"):
-            # check if it's branch (no rate table, has subtitle '默认')
             c_name = card.select_one(".card-title").get_text(strip=True) if card.select_one(".card-title") else ""
             c_sub = card.select_one(".card-subtitle").get_text(strip=True) if card.select_one(".card-subtitle") else ""
             c_icon = card.select_one(".card-icon").get("src") if card.select_one(".card-icon") and card.select_one(".card-icon").name == 'img' else ""
-            
             desc_html = "".join(str(c) for c in card.select_one(".card-desc").contents) if card.select_one(".card-desc") else ""
             
-            # Rate table
             table_data = []
             thead = card.select_one(".rate-table thead tr")
             if thead:
@@ -358,7 +315,6 @@ def parse_html(html: str) -> dict:
             })
             
     elif section == "forte":
-        # Check features
         feat_grid = soup.select_one(".features-grid")
         if feat_grid:
             forte_features = [f.get_text(strip=True) for f in feat_grid.select(".feature-item")]
@@ -394,9 +350,8 @@ def draw_header(data: dict) -> Image.Image:
     
     d.line([(0, H-2), (INNER_W, H-2)], fill=(255, 255, 255, 25), width=2)
     
-    # Left
     cx, cy = 10, 40
-    d.text((cx, cy), data["char_name"], font=F80B, fill=C_WHITE)
+    draw_text_mixed(d, (cx, cy), data["char_name"], cn_font=F80B, en_font=M80, fill=C_WHITE)
     cy += 80 + 10
     
     if data["rarity_icon"]:
@@ -418,7 +373,7 @@ def draw_header(data: dict) -> Image.Image:
             ei = _b64_fit(data["ele_icon"], 32, 32)
             img.paste(ei, (curr_x + 4, tag_y + 2), ei)
         except: pass
-    d.text((curr_x + 40, tag_y + _ty(F18B, data["ele_name"], tag_h)), data["ele_name"], font=F18B, fill=C_WHITE)
+    draw_text_mixed(d, (curr_x + 40, tag_y + _ty(F18B, data["ele_name"], tag_h)), data["ele_name"], cn_font=F18B, en_font=M18, fill=C_WHITE)
     curr_x += 32 + 8 + ew + 16 + 15
     
     # Weapon tag
@@ -427,12 +382,11 @@ def draw_header(data: dict) -> Image.Image:
     if data["wpn_icon"]:
         try:
             wi = _b64_fit(data["wpn_icon"], 32, 32)
-            # pseudo invert
             wi_inv = ImageOps.invert(wi.convert("RGB")).convert("RGBA")
             wi_inv.putalpha(wi.split()[3])
             img.paste(wi_inv, (curr_x + 4, tag_y + 2), wi_inv)
         except: pass
-    d.text((curr_x + 40, tag_y + _ty(F18B, data["wpn_name"], tag_h)), data["wpn_name"], font=F18B, fill=C_WHITE)
+    draw_text_mixed(d, (curr_x + 40, tag_y + _ty(F18B, data["wpn_name"], tag_h)), data["wpn_name"], cn_font=F18B, en_font=M18, fill=C_WHITE)
     curr_x += 32 + 8 + ww + 16 + 15
     
     # Mats
@@ -451,12 +405,10 @@ def draw_header(data: dict) -> Image.Image:
     if data["portrait"]:
         try:
             p_img = _b64_img(data["portrait"])
-            # Scale to max height 340
             scale = 340 / p_img.height
             pw = int(p_img.width * scale)
             p_img = p_img.resize((pw, 340), Image.LANCZOS)
             
-            # Linear Gradient Mask
             pmask = Image.new("L", (pw, 340), 255)
             pd = ImageDraw.Draw(pmask)
             for y in range(int(340 * 0.8), 340):
@@ -466,16 +418,14 @@ def draw_header(data: dict) -> Image.Image:
             img.paste(p_img, (INNER_W - 200 - pw, -20), pmask)
         except: pass
         
-    # Stats (Vertical)
     sy = 40
     sx = INNER_W - 200
     for lb, vl in data["stats"]:
         _draw_rounded_rect(img, sx, sy, sx + 200, sy + 30, 4, (0,0,0,128))
         d.rectangle([sx, sy, sx + 4, sy + 30], fill=data["main_color"])
-        d.text((sx + 12, sy + _ty(F13B, lb, 30)), lb, font=F13B, fill=C_TEXT_SUB)
-        
+        draw_text_mixed(d, (sx + 12, sy + _ty(F13B, lb, 30)), lb, cn_font=F13B, en_font=M13, fill=C_TEXT_SUB)
         vw = int(F16.getlength(vl))
-        d.text((sx + 200 - 12 - vw, sy + _ty(F16, vl, 30)), vl, font=F16, fill=C_WHITE)
+        draw_text_mixed(d, (sx + 200 - 12 - vw, sy + _ty(F16, vl, 30)), vl, cn_font=F16, en_font=M16, fill=C_WHITE)
         sy += 30 + 8
 
     return img
@@ -483,75 +433,138 @@ def draw_header(data: dict) -> Image.Image:
 def draw_card_block(card: dict, main_color: tuple) -> Image.Image:
     pad = 20
     cw = INNER_W
+    hdr_h = 32 
     
-    # Header Height
-    hdr_h = 32 # 24 icon/title + padding 8
-    
-    # Desc Height via RichText
     desc_img = _render_rich_text(card["desc_html"], cw - pad*2, main_color)
-    
-    # Body Height
     body_h = desc_img.height
     
-    # Table / Images Height
     extra_h = 0
     table_img = None
+    
+    # -------------------------------------------------------------
+    # 核心修改点：支持动态折行的表格引擎
+    # -------------------------------------------------------------
     if card["type"] == "skill" and card.get("table"):
-        # Draw Table
         rows = card["table"]
-        th_h, td_h = 36, 36
-        tb_h = th_h + (len(rows) - 1) * td_h
-        tb_w = cw - pad*2
+        tb_w = cw - pad * 2
         
-        table_img = Image.new("RGBA", (tb_w, tb_h), (0,0,0,76))
-        td = ImageDraw.Draw(table_img)
+        # 调整首列占比：减小至 20%，给右边数据流出更大空间
+        col_w_0 = int(tb_w * 0.20)
+        num_rest_cols = max(1, len(rows[0]) - 1)
+        col_w_rest = (tb_w - col_w_0) // num_rest_cols
         
-        col_w_0 = int(tb_w * 0.25)
-        col_w_rest = (tb_w - col_w_0) // max(1, len(rows[0]) - 1)
+        # 中英文精确测宽函数，防止文字无法居中
+        def get_mixed_width(text, cn_f, en_f):
+            w = 0
+            for ch in text:
+                is_en = 'a' <= ch <= 'z' or 'A' <= ch <= 'Z' or '0' <= ch <= '9'
+                w += (en_f if is_en else cn_f).getlength(ch)
+            return int(w)
+            
+        # 强制换行函数
+        def wrap_mixed(text, cn_f, en_f, max_w):
+            lines = []
+            curr_line = ""
+            curr_w = 0
+            for char in text:
+                # 【修复】把 ch 改成了 char
+                is_en = 'a' <= char <= 'z' or 'A' <= char <= 'Z' or '0' <= char <= '9'
+                char_w = (en_f if is_en else cn_f).getlength(char)
+                if curr_w + char_w <= max_w:
+                    curr_line += char
+                    curr_w += char_w
+                else:
+                    if curr_line: lines.append(curr_line)
+                    curr_line = char
+                    curr_w = char_w
+            if curr_line: lines.append(curr_line)
+            return lines
+
+        # 1. 预计算所有格子的换行状态和行高
+        wrapped_rows = []
+        row_heights = []
+        base_h = 36
+        line_h = 16 # 单行文本高度
         
-        y = 0
         for r_idx, row in enumerate(rows):
-            is_th = r_idx == 0
-            if r_idx % 2 != 0:
-                td.rectangle([0, y, tb_w, y + td_h], fill=(255,255,255,5))
-                
-            x = 0
+            f = F13B if r_idx == 0 else F13
+            en_f = globals().get(f"M{f.size}")
+            wrapped_cells = []
+            max_lines = 1
+            
             for c_idx, cell_txt in enumerate(row):
                 w = col_w_0 if c_idx == 0 else col_w_rest
-                # border
-                td.rectangle([x, y, x+w, y + (th_h if is_th else td_h)], outline=(255,255,255,20))
+                if c_idx == len(row) - 1:
+                    w = tb_w - col_w_0 - col_w_rest * (len(row)-2)
+                    
+                # 左右各留 5px padding，防止字贴脸
+                max_text_w = max(10, w - 10)
+                lines = wrap_mixed(cell_txt, f, en_f, max_text_w)
+                if not lines: lines = [""]
+                wrapped_cells.append(lines)
+                max_lines = max(max_lines, len(lines))
+                
+            wrapped_rows.append(wrapped_cells)
+            # 行高 = max(基础行高, 文本行数*行高 + 上下总padding 16)
+            row_heights.append(max(base_h, max_lines * line_h + 16))
+            
+        tb_h = sum(row_heights)
+        
+        # 画布尺寸双向 +1，保证四边框严丝合缝
+        table_img = Image.new("RGBA", (tb_w + 1, tb_h + 1), (0, 0, 0, 76))
+        td = ImageDraw.Draw(table_img)
+        
+        # 2. 循环绘制内容
+        curr_y = 0
+        for r_idx, (wrapped_cells, row_h) in enumerate(zip(wrapped_rows, row_heights)):
+            is_th = r_idx == 0
+            
+            # 交替斑马纹背景
+            if r_idx % 2 != 0:
+                td.rectangle([0, curr_y, tb_w - 1, curr_y + row_h - 1], fill=(255, 255, 255, 5))
+                
+            curr_x = 0
+            for c_idx, lines in enumerate(wrapped_cells):
+                w = col_w_0 if c_idx == 0 else col_w_rest
+                if c_idx == len(wrapped_cells) - 1:
+                    w = tb_w - curr_x
+                    
+                cell_rect = [curr_x, curr_y, curr_x + w - 1, curr_y + row_h - 1]
+                td.rectangle(cell_rect, outline=(255, 255, 255, 20))
                 
                 if c_idx == 0:
-                    td.rectangle([x, y, x+w, y + (th_h if is_th else td_h)], fill=(0,0,0,25))
+                    td.rectangle(cell_rect, fill=(0, 0, 0, 25), outline=(255, 255, 255, 20))
                     
                 f = F13B if is_th else F13
-                col = main_color if is_th else (238,238,238,255)
-                # align left for col 0, center for rest
-                if c_idx == 0:
-                    td.text((x + 10, y + _ty(f, cell_txt, (th_h if is_th else td_h))), cell_txt, font=f, fill=col)
-                else:
-                    tw = int(f.getlength(cell_txt))
-                    td.text((x + (w-tw)//2, y + _ty(f, cell_txt, (th_h if is_th else td_h))), cell_txt, font=f, fill=col)
-                x += w
-            y += th_h if is_th else td_h
-            
-        extra_h = 15 + tb_h # margin-top 15
-        
-    elif card["type"] == "forte" and card.get("groups"):
-        # Groups with images
-        extra_h = 0
-        # desc_img already holds the first group desc if parsed like that? 
-        # Actually forte card has multiple groups, we need to render them as blocks.
-        pass # Will handle inside the specific forte draw to avoid complexity here
+                col = main_color if is_th else (238, 238, 238, 255)
+                en_f = globals().get(f"M{f.size}")
+                
+                total_text_h = len(lines) * line_h
+                # Y 轴居中，微调 -1 修正基线视觉
+                start_y = curr_y + (row_h - total_text_h) // 2 - 1 
+                
+                for i, line in enumerate(lines):
+                    if c_idx == 0:
+                        draw_text_mixed(td, (curr_x + 8, start_y + i * line_h), line, cn_font=f, en_font=en_f, fill=col)
+                    else:
+                        tw = get_mixed_width(line, f, en_f)
+                        draw_text_mixed(td, (curr_x + (w - tw) // 2, start_y + i * line_h), line, cn_font=f, en_font=en_f, fill=col)
+                        
+                curr_x += w
+            curr_y += row_h
 
-    H = pad * 2 + hdr_h + 12 + body_h + extra_h
+        # 【终极补全】强行画一次大外框，彻底解决部分分辨率导致的底线消失
+        td.rectangle([0, 0, tb_w, tb_h], outline=(255, 255, 255, 40))
+        
+        extra_h = 15 + tb_h
+        
+    H = pad * 2 + hdr_h + 12 + body_h + extra_h + 10
     
     img = Image.new("RGBA", (cw, H), (0, 0, 0, 0))
     d = ImageDraw.Draw(img)
     _draw_rounded_rect(img, 0, 0, cw, H, 6, C_CARD_BG, outline=(255,255,255,20))
     
     cy = pad
-    # Header
     d.line([(pad, cy + hdr_h), (cw - pad, cy + hdr_h)], fill=(255,255,255,25), width=1)
     
     hx = pad
@@ -562,23 +575,21 @@ def draw_card_block(card: dict, main_color: tuple) -> Image.Image:
                 img.paste(ic, (hx, cy - 2), ic)
             except: pass
         elif card.get("idx"):
-            d.text((hx, cy - 2), card["idx"], font=F24B, fill=C_WHITE)
+            draw_text_mixed(d, (hx, cy - 2), card["idx"], cn_font=F24B, en_font=M24, fill=C_WHITE)
         hx += 28 + 12
         
-    d.text((hx, cy), card["name"], font=F24B, fill=main_color)
+    draw_text_mixed(d, (hx, cy), card["name"], cn_font=F24B, en_font=M24, fill=main_color)
     
     if card.get("sub"):
         sw = int(F16.getlength(card["sub"]))
         _draw_rounded_rect(img, cw - pad - sw - 20, cy, cw - pad, cy + 24, 12, (255,255,255,20))
-        d.text((cw - pad - sw - 10, cy + _ty(F16, card["sub"], 24)), card["sub"], font=F16, fill=C_TEXT_SUB)
+        draw_text_mixed(d, (cw - pad - sw - 10, cy + _ty(F16, card["sub"], 24)), card["sub"], cn_font=F16, en_font=M16, fill=C_TEXT_SUB)
         
     cy += hdr_h + 12
     
-    # Body
     img.alpha_composite(desc_img, (pad, cy))
     cy += body_h
     
-    # Extra (Table)
     if table_img:
         cy += 15
         img.alpha_composite(table_img, (pad, cy))
@@ -599,7 +610,6 @@ def draw_forte_card(card: dict, main_color: tuple) -> Image.Image:
         for src in g["imgs"]:
             try:
                 im = _b64_img(src)
-                # Max width: cw - pad*2 - 30
                 max_w = cw - pad*2 - 30
                 if im.width > max_w:
                     sc = max_w / im.width
@@ -631,7 +641,7 @@ def draw_forte_card(card: dict, main_color: tuple) -> Image.Image:
     
     cy = pad
     d.line([(pad, cy + hdr_h), (cw - pad, cy + hdr_h)], fill=(255,255,255,25), width=1)
-    d.text((pad, cy), card["name"], font=F24B, fill=main_color)
+    draw_text_mixed(d, (pad, cy), card["name"], cn_font=F24B, en_font=M24, fill=main_color)
     cy += hdr_h + 12
     
     for gi in group_imgs:
@@ -659,7 +669,8 @@ def draw_features_block(feats: list, main_color: tuple) -> Image.Image:
         
         fy = 14
         for l in lines:
-            fd.text((20, fy), l, font=F20, fill=C_WHITE)
+            en_f = globals().get(f"M{getattr(F20, 'size', None)}", None)
+            draw_text_mixed(fd, (20, fy), l, cn_font=F20, en_font=en_f, fill=C_WHITE)
             fy += 30
         f_imgs.append(fim)
 
@@ -671,7 +682,7 @@ def draw_features_block(feats: list, main_color: tuple) -> Image.Image:
     
     cy = pad
     d.line([(pad, cy + hdr_h), (INNER_W - pad, cy + hdr_h)], fill=(255,255,255,25), width=1)
-    d.text((pad, cy), "角色特点", font=F24B, fill=main_color)
+    draw_text_mixed(d, (pad, cy), "角色特点", cn_font=F24B, en_font=M24, fill=main_color)
     cy += hdr_h + 12
     
     for fim in f_imgs:
@@ -694,7 +705,7 @@ def render(html: str) -> bytes:
     s_title = Image.new("RGBA", (INNER_W, 40), (0,0,0,0))
     td = ImageDraw.Draw(s_title)
     td.rectangle([0, 6, 6, 34], fill=data["main_color"])
-    td.text((15, 0), title_text, font=F28B, fill=data["main_color"])
+    draw_text_mixed(td, (15, 0), title_text, cn_font=F28B, en_font=M28, fill=data["main_color"])
     
     # Cards
     c_imgs = []

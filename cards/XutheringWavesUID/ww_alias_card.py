@@ -22,30 +22,10 @@ C_WHITE = (255, 255, 255, 255)
 C_GOLD = (212, 177, 99, 255)
 
 
-# 字体加载
+from . import draw_text_mixed, M12, M14, M15, M16, M17, M18, M20, M22, M24, M26, M28, M30, M32, M34, M36, M38, M42, M48, M72
 
-def _load_font(size: int, bold: bool = False) -> ImageFont.FreeTypeFont:
-    FONT_FILE = Path(__file__).parent.parent.parent / "assets" / "H7GBKHeavy.TTF"
-    candidates = [
-        str(FONT_FILE),
-        "C:/Windows/Fonts/msyhbd.ttc" if bold else "C:/Windows/Fonts/msyh.ttc",
-        "C:/Windows/Fonts/msyh.ttc",
-        "C:/Windows/Fonts/simhei.ttf",
-        "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-    ]
-    for p in candidates:
-        try:
-            return ImageFont.truetype(str(p), size)
-        except Exception:
-            continue
-    return ImageFont.load_default()
-
-F12 = _load_font(12, bold=True)
-F14 = _load_font(14, bold=True)
-F16 = _load_font(16, bold=True)
-F32 = _load_font(32, bold=True)
-
+# 使用包级统一字体对象（从包里导入以复用同一实例）
+from . import F12, F14, F16, F32
 def _ty(font, text: str, box_h: int) -> int:
     bb = font.getbbox(text)
     return (box_h - (bb[3] - bb[1])) // 2 - bb[1] + 1
@@ -217,9 +197,9 @@ def draw_main_card(data: dict) -> Image.Image:
             rmask = _round_mask(AV_SZ, AV_SZ, AV_SZ // 2)
             card.paste(av_img, (av_x, av_y), rmask)
         except Exception:
-            d.text((av_x + 32, av_y + 24), "?", font=F32, fill=(85, 85, 85, 255))
+            draw_text_mixed(d, (av_x + 32, av_y + 24), "?", cn_font=F32, en_font=M32, fill=(85, 85, 85, 255))
     else:
-        d.text((av_x + 32, av_y + 24), "?", font=F32, fill=(85, 85, 85, 255))
+        draw_text_mixed(d, (av_x + 32, av_y + 24), "?", cn_font=F32, en_font=M32, fill=(85, 85, 85, 255))
         
     # 头像环 (右下45度高亮段：PIL 坐标系中为 270到360度)
     d.ellipse([av_x-4, av_y-4, av_x+AV_SZ+4, av_y+AV_SZ+4], outline=(255, 255, 255, 25), width=1)
@@ -228,8 +208,8 @@ def draw_main_card(data: dict) -> Image.Image:
     
     # 角色信息
     text_x = av_x + AV_SZ + 20
-    d.text((text_x, av_y + 12), "CHARACTER NAME", font=F12, fill=C_GOLD)
-    d.text((text_x, av_y + 32), data["char_name"], font=F32, fill=C_WHITE)
+    draw_text_mixed(d, (text_x, av_y + 12), "CHARACTER NAME", cn_font=F12, en_font=M12, fill=C_GOLD)
+    draw_text_mixed(d, (text_x, av_y + 32), data["char_name"], cn_font=F32, en_font=M32, fill=C_WHITE)
     
     # 4. 绘制 Body
     body_bg = Image.new("RGBA", (INNER_W, body_h), (0, 0, 0, 51))
@@ -242,7 +222,7 @@ def draw_main_card(data: dict) -> Image.Image:
     # 别名 Label
     label_y = HEADER_H + 20
     d.rounded_rectangle([25, label_y, 28, label_y + 14], radius=2, fill=C_GOLD)
-    d.text((36, label_y - 2), "ALIASES", font=F14, fill=(170, 170, 170, 255))
+    draw_text_mixed(d, (36, label_y - 2), "ALIASES", cn_font=F14, en_font=M14, fill=(170, 170, 170, 255))
     
     # 绘制 Alias Grid
     grid_y = label_y + 14 + 12
@@ -261,9 +241,9 @@ def draw_main_card(data: dict) -> Image.Image:
                 
             _draw_rounded_rect(card, curr_x, grid_y, curr_x + pill["w"], grid_y + pill["h"], 
                                6, bg_col, outline=br_col)
-            
-            d.text((curr_x + 14, grid_y + _ty(F16, pill["text"], pill["h"])), 
-                   pill["text"], font=F16, fill=txt_col)
+
+            draw_text_mixed(d, (curr_x + 14, grid_y + _ty(F16, pill["text"], pill["h"])), 
+                            pill["text"], cn_font=F16, en_font=M16, fill=txt_col)
             
             curr_x += pill["w"] + 8 # GAP_X
             

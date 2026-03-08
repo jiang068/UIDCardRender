@@ -36,35 +36,10 @@ CHAIN_COLORS = {
 }
 
 
-# 字体加载
+from . import draw_text_mixed, M12, M14, M15, M16, M17, M18, M20, M22, M24, M26, M28, M30, M32, M34, M36, M38, M42, M48, M72
 
-def _load_font(size: int, bold: bool = False) -> ImageFont.FreeTypeFont:
-    FONT_FILE = Path(__file__).parent.parent.parent / "assets" / "H7GBKHeavy.TTF"
-    candidates = [
-        str(FONT_FILE),
-        "C:/Windows/Fonts/msyhbd.ttc" if bold else "C:/Windows/Fonts/msyh.ttc",
-        "C:/Windows/Fonts/msyh.ttc",
-        "C:/Windows/Fonts/simhei.ttf",
-        "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-    ]
-    for p in candidates:
-        try:
-            return ImageFont.truetype(str(p), size)
-        except Exception:
-            continue
-    return ImageFont.load_default()
-
-F12 = _load_font(12)
-F14 = _load_font(14)
-F18 = _load_font(18, bold=True)
-F20 = _load_font(20, bold=True)
-F24 = _load_font(24, bold=True)
-F28 = _load_font(28, bold=True)
-F30 = _load_font(30, bold=True)
-F40 = _load_font(40, bold=True)
-F42 = _load_font(42, bold=True)
-F56 = _load_font(56, bold=True)
+# 使用包级统一字体对象（从包里导入以复用同一实例）
+from . import F12, F14, F18, F20, F24, F28, F30, F40, F42, F56
 
 def _ty(font, text: str, box_h: int) -> int:
     bb = font.getbbox(text)
@@ -72,9 +47,13 @@ def _ty(font, text: str, box_h: int) -> int:
     return (box_h - text_h) // 2 - bb[1] + 1
 
 def _draw_text_shadow(d: ImageDraw.ImageDraw, xy: tuple, text: str, font, fill, shadow=(0,0,0,150), offset=(0,2)):
+    """Draw shadow + main text using mixed-font rendering.
+    Infer matching mono font by font.size if available.
+    """
     x, y = int(round(xy[0])), int(round(xy[1]))
-    d.text((x + offset[0], y + offset[1]), text, font=font, fill=shadow)
-    d.text((x, y), text, font=font, fill=fill)
+    en_font = globals().get(f"M{getattr(font, 'size', None)}", None)
+    draw_text_mixed(d, (x + offset[0], y + offset[1]), text, cn_font=font, en_font=en_font, fill=shadow)
+    draw_text_mixed(d, (x, y), text, cn_font=font, en_font=en_font, fill=fill)
 
 
 # 图片与蒙版处理缓存
@@ -304,7 +283,7 @@ def _draw_role_mini(role: dict) -> Image.Image:
     lw = int(F20.getlength(level_text)) + 16
     _draw_h_gradient(card, 0, 4, lw + 10, 4 + lh, (0, 0, 0, 216), (0, 0, 0, 0))
     d.rectangle([0, 4, 3, 4 + lh], fill=(212, 177, 99, 255))
-    d.text((6, 4 + _ty(F20, level_text, lh)), level_text, font=F20, fill=C_WHITE)
+    draw_text_mixed(d, (6, 4 + _ty(F20, level_text, lh)), level_text, cn_font=F20, en_font=M20, fill=C_WHITE)
 
     chain_num  = role["chain_num"]
     chain_text = role["chain_str"]
@@ -317,7 +296,7 @@ def _draw_role_mini(role: dict) -> Image.Image:
 
     _draw_h_gradient(card, cx - 14, cy, RW, cy + ch, (0, 0, 0, 0), (0, 0, 0, 235))
     d.rectangle([RW - 4, cy, RW - 1, cy + ch], fill=(*chain_col, 255))
-    d.text((cx + 2, cy + _ty(F20, chain_text, ch)), chain_text, font=F20, fill=(*text_col, 255))
+    draw_text_mixed(d, (cx + 2, cy + _ty(F20, chain_text, ch)), chain_text, cn_font=F20, en_font=M20, fill=(*text_col, 255))
 
     return card
 
@@ -329,7 +308,7 @@ def draw_user_card(data: dict) -> Image.Image:
     _draw_rounded_rect(card, 0, 0, INNER_W, H, 16, (255,255,255,5))
     
     d = ImageDraw.Draw(card)
-    d.text((INNER_W - 140, 20), "SLASH REPORT", font=F14, fill=(255,255,255,30))
+    draw_text_mixed(d, (INNER_W - 140, 20), "SLASH REPORT", cn_font=F14, en_font=M14, fill=(255,255,255,30))
 
     av_x, av_y = 40, 30
     AV_SIZE = 100
@@ -350,7 +329,7 @@ def draw_user_card(data: dict) -> Image.Image:
     uid_x = tx + F42.getlength(data["user"]["name"]) + 20
     _draw_rounded_rect(card, uid_x, 38, uid_x + uid_w, 38 + 32, 6, (0,0,0,100))
     d.rounded_rectangle([uid_x, 38, uid_x + uid_w, 38 + 32], radius=6, outline=(212,177,99,50), width=1)
-    d.text((uid_x + 12, 38 + _ty(F20, uid_str, 32)), uid_str, font=F20, fill=C_GOLD)
+    draw_text_mixed(d, (uid_x + 12, 38 + _ty(F20, uid_str, 32)), uid_str, cn_font=F20, en_font=M20, fill=C_GOLD)
 
     d.line([(tx, 85), (tx + 40, 85)], fill=C_GOLD, width=2)
     d.line([(tx + 40, 85), (INNER_W - 40, 85)], fill=(255,255,255,20), width=1)
@@ -359,7 +338,7 @@ def draw_user_card(data: dict) -> Image.Image:
     for i, st in enumerate(data["user"]["stats"]):
         sx = tx + i * 140
         _draw_text_shadow(d, (sx, stat_y), st["val"], F30, C_WHITE)
-        d.text((sx, stat_y + 36), st["label"], font=F12, fill=C_GREY)
+        draw_text_mixed(d, (sx, stat_y + 36), st["label"], cn_font=F12, en_font=M12, fill=C_GREY)
 
     return card
 
@@ -532,9 +511,9 @@ def render(html: str) -> bytes:
     if period:
         _draw_rounded_rect(canvas, px, y + 20, px + pw, y + 50, 6, (212, 177, 99, 38))
         d.rounded_rectangle([px, y + 20, px + pw, y + 50], radius=6, outline=(212, 177, 99, 76), width=1)
-        d.text((px + 12, y + 20 + _ty(F20, period, 30)), period, font=F20, fill=C_GOLD)
+        draw_text_mixed(d, (px + 12, y + 20 + _ty(F20, period, 30)), period, cn_font=F20, en_font=M20, fill=C_GOLD)
     if date_str:
-        d.text((px + pw + 15, y + 20 + _ty(F18, date_str, 30)), date_str, font=F18, fill=C_GREY)
+        draw_text_mixed(d, (px + pw + 15, y + 20 + _ty(F18, date_str, 30)), date_str, cn_font=F18, en_font=M18, fill=C_GREY)
         
     d.line([(PAD + 30, y + 60), (PAD + INNER_W - 30, y + 60)], fill=(255, 255, 255, 13), width=1)
 

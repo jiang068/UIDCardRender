@@ -27,34 +27,10 @@ RE_COLOR = re.compile(r"color:\s*([^;]+)")
 RE_BORDER = re.compile(r"border-color:\s*([^;]+)")
 
 
-# 字体加载
+from . import draw_text_mixed, M12, M14, M15, M16, M17, M18, M20, M22, M24, M26, M28, M30, M32, M34, M36, M38, M42, M48, M72
 
-def _load_font(size: int, bold: bool = False) -> ImageFont.FreeTypeFont:
-    FONT_FILE = Path(__file__).parent.parent.parent / "assets" / "H7GBKHeavy.TTF"
-    candidates = [
-        str(FONT_FILE),
-        "C:/Windows/Fonts/msyhbd.ttc" if bold else "C:/Windows/Fonts/msyh.ttc",
-        "C:/Windows/Fonts/msyh.ttc",
-        "C:/Windows/Fonts/simhei.ttf",
-        "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-    ]
-    for p in candidates:
-        try:
-            return ImageFont.truetype(str(p), size)
-        except Exception:
-            continue
-    return ImageFont.load_default()
-
-F15  = _load_font(15, bold=True)
-F16  = _load_font(16)
-F18  = _load_font(18)
-F18B = _load_font(18, bold=True)
-F20B = _load_font(20, bold=True)
-F26  = _load_font(26)
-F28B = _load_font(28, bold=True)
-F34B = _load_font(34, bold=True)
-F72B = _load_font(72, bold=True)
+# 使用包级统一字体对象（从包里导入以复用同一实例）
+from . import F15, F16, F18, F18B, F20B, F26, F28B, F34B, F72B
 
 def _ty(font, text: str, box_h: int) -> int:
     bb = font.getbbox(text)
@@ -231,7 +207,7 @@ def draw_floor_block(floor: dict, width: int, main_color: tuple) -> Image.Image:
             
             by = 8
             for line in lines:
-                d_b.text((14, by), line, font=F18, fill=(204, 204, 204, 255))
+                draw_text_mixed(d_b, (14, by), line, cn_font=F18, en_font=M18, fill=(204, 204, 204, 255))
                 by += 28
             buff_imgs.append(b_img)
             
@@ -257,12 +233,12 @@ def draw_floor_block(floor: dict, width: int, main_color: tuple) -> Image.Image:
     
     # Draw Title
     d.rectangle([pad, cy + 4, pad + 5, cy + 28 - 4], fill=main_color)
-    d.text((pad + 14, cy), floor["name"], font=F28B, fill=C_WHITE)
+    draw_text_mixed(d, (pad + 14, cy), floor["name"], cn_font=F28B, en_font=M28, fill=C_WHITE)
     
     nw = int(F28B.getlength(floor["name"])) + 26
     c_txt = f"消耗疲劳: {floor['cost']}"
     _draw_rounded_rect(img, pad + nw, cy + 2, pad + nw + int(F18.getlength(c_txt)) + 20, cy + 28 - 2, 12, (255, 255, 255, 20))
-    d.text((pad + nw + 10, cy + 2 + _ty(F18, c_txt, 24)), c_txt, font=F18, fill=(153, 153, 153, 255))
+    draw_text_mixed(d, (pad + nw + 10, cy + 2 + _ty(F18, c_txt, 24)), c_txt, cn_font=F18, en_font=M18, fill=(153, 153, 153, 255))
     
     cy += title_h
     
@@ -299,11 +275,11 @@ def draw_floor_block(floor: dict, width: int, main_color: tuple) -> Image.Image:
             # Text
             tx = 14 + ic_sz + 14
             m_name_trunc = _truncate_text(m["name"], F20B, m_w - tx - 10)
-            md.text((tx, 14), m_name_trunc, font=F20B, fill=C_WHITE)
+            draw_text_mixed(md, (tx, 14), m_name_trunc, cn_font=F20B, en_font=M20, fill=C_WHITE)
             
             if m["element"]:
                 ele_txt = f"{m['element']}抗性"
-                md.text((tx, 42), ele_txt, font=F15, fill=m["color"])
+                draw_text_mixed(md, (tx, 42), ele_txt, cn_font=F15, en_font=M15, fill=m["color"])
                 
             img.alpha_composite(m_card, (mx, my))
 
@@ -327,7 +303,7 @@ def draw_tower_card(tower: dict, width: int, main_color: tuple) -> Image.Image:
     # Card bg
     _draw_rounded_rect(img, 0, 0, width, H, 16, (20, 20, 25, 224), outline=(255, 255, 255, 25))
     
-    d.text((pad, pad), tower["name"], font=F34B, fill=main_color)
+    draw_text_mixed(d, (pad, pad), tower["name"], cn_font=F34B, en_font=M34, fill=main_color)
     d.line([(pad, pad + 45), (width - pad, pad + 45)], fill=(255, 255, 255, 20), width=2)
     
     cy = pad + title_h + 8
@@ -349,12 +325,12 @@ def render(html: str) -> bytes:
     hd = ImageDraw.Draw(hdr_img)
     
     tw = int(F72B.getlength(data["title"]))
-    hd.text(((INNER_W - tw) // 2, 0), data["title"], font=F72B, fill=C_WHITE)
-    
+    draw_text_mixed(hd, ((INNER_W - tw) // 2, 0), data["title"], cn_font=F72B, en_font=M72, fill=C_WHITE)
+
     if data["subtitle"]:
         stw = int(F26.getlength(data["subtitle"]))
         _draw_rounded_rect(hdr_img, (INNER_W - stw - 56) // 2, 85, (INNER_W + stw + 56) // 2, 85 + 46, 23, (0, 0, 0, 128), outline=(255, 255, 255, 38))
-        hd.text(((INNER_W - stw) // 2, 85 + _ty(F26, data["subtitle"], 46)), data["subtitle"], font=F26, fill=(204, 204, 204, 255))
+        draw_text_mixed(hd, ((INNER_W - stw) // 2, 85 + _ty(F26, data["subtitle"], 46)), data["subtitle"], cn_font=F26, en_font=M26, fill=(204, 204, 204, 255))
         
     # Row 1: Left / Right Towers
     col_w = (INNER_W - 20) // 2
@@ -403,7 +379,7 @@ def render(html: str) -> bytes:
         dd = ImageDraw.Draw(deep_img)
         _draw_rounded_rect(deep_img, 0, 0, INNER_W, deep_h, 16, (20, 20, 25, 224), outline=(255, 255, 255, 25))
         
-        dd.text((pad, pad), data["deep_tower"]["name"], font=F34B, fill=data["main_color"])
+        draw_text_mixed(dd, (pad, pad), data["deep_tower"]["name"], cn_font=F34B, en_font=M34, fill=data["main_color"])
         dd.line([(pad, pad + 45), (INNER_W - pad, pad + 45)], fill=(255, 255, 255, 20), width=2)
         
         cy = pad + title_h + 8

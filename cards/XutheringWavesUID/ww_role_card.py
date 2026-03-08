@@ -37,33 +37,10 @@ CHAIN_COLORS = {
 }
 
 
-# 字体加载
+from . import draw_text_mixed, M12, M14, M15, M16, M17, M18, M20, M22, M24, M26, M28, M30, M32, M34, M36, M38, M42, M48, M72
 
-def _load_font(size: int, bold: bool = False) -> ImageFont.FreeTypeFont:
-    FONT_FILE = Path(__file__).parent.parent.parent / "assets" / "H7GBKHeavy.TTF"
-    candidates = [
-        str(FONT_FILE),
-        "C:/Windows/Fonts/msyhbd.ttc" if bold else "C:/Windows/Fonts/msyh.ttc",
-        "C:/Windows/Fonts/msyh.ttc",
-        "C:/Windows/Fonts/simhei.ttf",
-        "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-    ]
-    for p in candidates:
-        try:
-            return ImageFont.truetype(str(p), size)
-        except Exception:
-            continue
-    return ImageFont.load_default()
-
-F12 = _load_font(12)
-F14 = _load_font(14)
-F18 = _load_font(18, bold=True)
-F20 = _load_font(20, bold=True)
-F24 = _load_font(24, bold=True)
-F26 = _load_font(26, bold=True)
-F30 = _load_font(30, bold=True)
-F42 = _load_font(42, bold=True)
+# 使用包级统一字体对象（从包里导入以复用同一实例）
+from . import F12, F14, F18, F20, F24, F26, F30, F42
 
 def _ty(font, text: str, box_h: int) -> int:
     bb = font.getbbox(text)
@@ -71,9 +48,13 @@ def _ty(font, text: str, box_h: int) -> int:
     return (box_h - text_h) // 2 - bb[1] + 1
 
 def _draw_text_shadow(d: ImageDraw.ImageDraw, xy: tuple, text: str, font, fill, shadow=(0,0,0,150), offset=(0,2)):
+    """Draw shadow + main text using mixed-font rendering.
+    Try to infer mono font based on font.size.
+    """
     x, y = int(round(xy[0])), int(round(xy[1]))
-    d.text((x + offset[0], y + offset[1]), text, font=font, fill=shadow)
-    d.text((x, y), text, font=font, fill=fill)
+    en_font = globals().get(f"M{getattr(font, 'size', None)}", None)
+    draw_text_mixed(d, (x + offset[0], y + offset[1]), text, cn_font=font, en_font=en_font, fill=shadow)
+    draw_text_mixed(d, (x, y), text, cn_font=font, en_font=en_font, fill=fill)
 
 
 # 图像处理缓存 (含降维模糊提速)
@@ -312,7 +293,7 @@ def draw_user_card(data: dict) -> Image.Image:
     
     d = ImageDraw.Draw(card)
     deco_txt = "R O V E R   R E S O N A N C E   C A R D"
-    d.text((INNER_W - 300, 25), deco_txt, font=F14, fill=(255,255,255,30))
+    draw_text_mixed(d, (INNER_W - 300, 25), deco_txt, cn_font=F14, en_font=M14, fill=(255,255,255,30))
 
     av_x, av_y = 40, 30
     AV_SIZE = 100
@@ -333,7 +314,7 @@ def draw_user_card(data: dict) -> Image.Image:
     uid_x = tx + F42.getlength(data["user"]["name"]) + 20
     _draw_rounded_rect(card, uid_x, 38, uid_x + uid_w, 38 + 32, 6, (0,0,0,100))
     d.rounded_rectangle([uid_x, 38, uid_x + uid_w, 38 + 32], radius=6, outline=(212,177,99,50), width=1)
-    d.text((uid_x + 12, 38 + _ty(F20, uid_str, 32)), uid_str, font=F20, fill=C_GOLD)
+    draw_text_mixed(d, (uid_x + 12, 38 + _ty(F20, uid_str, 32)), uid_str, cn_font=F20, en_font=M20, fill=C_GOLD)
 
     d.line([(tx, 85), (tx + 40, 85)], fill=C_GOLD, width=2)
     d.line([(tx + 40, 85), (INNER_W - 40, 85)], fill=(255,255,255,20), width=1)
@@ -341,8 +322,8 @@ def draw_user_card(data: dict) -> Image.Image:
     stat_y = 95
     for i, st in enumerate(data["user"]["stats"]):
         sx = tx + i * 140
-        _draw_gradient_text(card, (sx, stat_y), st["val"], F30, C_WHITE, C_GOLD)
-        d.text((sx, stat_y + 36), st["label"], font=F12, fill=C_GREY)
+        _draw_gradient_text(card, (sx, stat_y), st["val"], M30, C_WHITE, C_GOLD)
+        draw_text_mixed(d, (sx, stat_y + 36), st["label"], cn_font=F12, en_font=M12, fill=C_GREY)
 
     return card
 
@@ -370,7 +351,7 @@ def draw_base_info_section(data: dict) -> Image.Image:
 
     if data.get("date"):
         dw = F18.getlength(data["date"])
-        d.text((INNER_W - 25 - dw, 30), data["date"], font=F18, fill=(136,136,136,255))
+    draw_text_mixed(d, (INNER_W - 25 - dw, 30), data["date"], cn_font=F18, en_font=M18, fill=(136,136,136,255))
 
     y = 85
     for r in range(rows):
@@ -385,7 +366,7 @@ def draw_base_info_section(data: dict) -> Image.Image:
             cd = ImageDraw.Draw(cell)
 
             kw = F20.getlength(it["key"])
-            cd.text(((item_w - kw)//2, 25), it["key"], font=F20, fill=(212,177,99,153))
+            draw_text_mixed(cd, ((item_w - kw)//2, 25), it["key"], cn_font=F20, en_font=M20, fill=(212,177,99,153))
             vw = F42.getlength(it["value"])
             _draw_text_shadow(cd, ((item_w - vw)//2, 55), it["value"], F42, C_WHITE, offset=(0,2))
 
@@ -498,7 +479,7 @@ def draw_role_grid_section(data: dict) -> Image.Image:
             if ch_num > 0:
                 _draw_text_shadow(cd, (ch_x + 14, ch_y + _ty(F24, ch_txt, 28)), ch_txt, F24, txt_col, shadow=(*ch_col, 150), offset=(0,0))
             else:
-                cd.text((ch_x + 14, ch_y + _ty(F24, ch_txt, 28)), ch_txt, font=F24, fill=txt_col)
+                draw_text_mixed(cd, (ch_x + 14, ch_y + _ty(F24, ch_txt, 28)), ch_txt, cn_font=F24, en_font=M24, fill=txt_col)
 
             ix = 25 + c * (card_w + gap) - overflow_x
             iy = y_offset + r * (card_h + overflow_y + gap)

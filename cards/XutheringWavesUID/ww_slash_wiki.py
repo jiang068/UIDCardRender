@@ -30,48 +30,36 @@ RE_BORDER = re.compile(r"border-color:\s*([^;]+)")
 RE_BG_URL = re.compile(r"url\('([^']+)'\)")
 
 
-# 字体加载
+from . import draw_text_mixed, M12, M13, M14, M15, M16, M17, M18, M20, M22, M24, M26, M28, M30, M32, M34, M36, M38, M42, M48, M72
 
-def _load_font(size: int, bold: bool = False) -> ImageFont.FreeTypeFont:
-    FONT_FILE = Path(__file__).parent.parent.parent / "assets" / "H7GBKHeavy.TTF"
-    candidates = [
-        str(FONT_FILE),
-        "C:/Windows/Fonts/msyhbd.ttc" if bold else "C:/Windows/Fonts/msyh.ttc",
-        "C:/Windows/Fonts/msyh.ttc",
-        "C:/Windows/Fonts/simhei.ttf",
-        "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-    ]
-    for p in candidates:
-        try:
-            return ImageFont.truetype(str(p), size)
-        except Exception:
-            continue
-    return ImageFont.load_default()
-
-F13  = _load_font(13)
-F13B = _load_font(13, bold=True)
-F16B = _load_font(16, bold=True)
-F18  = _load_font(18)
-F22B = _load_font(22, bold=True)
-F26  = _load_font(26)
-F28B = _load_font(28, bold=True)
-F34B = _load_font(34, bold=True)
-F72B = _load_font(72, bold=True)
+# 使用包级统一字体对象（从包里导入以复用同一实例）
+from . import F13, F13B, F16B, F18, F22B, F26, F28B, F34B, F72B
 
 def _ty(font, text: str, box_h: int) -> int:
     bb = font.getbbox(text)
     return (box_h - (bb[3] - bb[1])) // 2 - bb[1] + 1
 
-def _wrap_text(text: str, font: ImageFont.FreeTypeFont, max_w: int) -> list[str]:
+def get_mixed_width(text: str, cn_f, en_f) -> int:
+    w = 0
+    for ch in text:
+        is_en = 'a' <= ch <= 'z' or 'A' <= ch <= 'Z' or '0' <= ch <= '9'
+        w += (en_f if is_en else cn_f).getlength(ch)
+    return int(w)
+
+def _wrap_text(text: str, cn_font: ImageFont.FreeTypeFont, en_font: ImageFont.FreeTypeFont, max_w: int) -> list[str]:
     lines = []
     curr_line = ""
+    curr_w = 0
     for char in text:
-        if font.getlength(curr_line + char) <= max_w:
+        is_en = 'a' <= char <= 'z' or 'A' <= char <= 'Z' or '0' <= char <= '9'
+        char_w = (en_font if is_en else cn_font).getlength(char)
+        if curr_w + char_w <= max_w:
             curr_line += char
+            curr_w += char_w
         else:
-            lines.append(curr_line)
+            if curr_line: lines.append(curr_line)
             curr_line = char
+            curr_w = char_w
     if curr_line:
         lines.append(curr_line)
     return lines
@@ -230,7 +218,7 @@ def parse_html(html: str) -> dict:
 def draw_buff_text(text: str, width: int) -> Image.Image:
     pad_x, pad_y = 14, 8
     avail_w = width - pad_x * 2 - 4 # 4px border
-    lines = _wrap_text(text, F18, avail_w)
+    lines = _wrap_text(text, F18, M18, avail_w)
     lh = 28 # 18px * 1.6
     
     H = pad_y * 2 + len(lines) * lh
@@ -242,7 +230,7 @@ def draw_buff_text(text: str, width: int) -> Image.Image:
     
     cy = pad_y
     for l in lines:
-        d.text((pad_x + 4, cy + _ty(F18, l, lh)), l, font=F18, fill=C_DESC)
+        draw_text_mixed(d, (pad_x + 4, cy + _ty(F18, l, lh)), l, cn_font=F18, en_font=M18, fill=C_DESC)
         cy += lh
         
     return img
@@ -252,7 +240,7 @@ def draw_global_buff_item(buff: dict, width: int) -> Image.Image:
     avail_w = width - pad_x * 2 - 4
     
     name_h = 22 + 6
-    lines = _wrap_text(buff["desc"], F18, avail_w)
+    lines = _wrap_text(buff["desc"], F18, M18, avail_w)
     lh = 28
     
     H = pad_y * 2 + name_h + len(lines) * lh
@@ -263,11 +251,11 @@ def draw_global_buff_item(buff: dict, width: int) -> Image.Image:
     d.rectangle([0, 0, 4, H], fill=(100, 180, 255, 128))
     
     cy = pad_y
-    d.text((pad_x + 4, cy), buff["name"], font=F22B, fill=(168, 212, 255, 255))
+    draw_text_mixed(d, (pad_x + 4, cy), buff["name"], cn_font=F22B, en_font=M22, fill=(168, 212, 255, 255))
     cy += name_h
     
     for l in lines:
-        d.text((pad_x + 4, cy + _ty(F18, l, lh)), l, font=F18, fill=C_DESC)
+        draw_text_mixed(d, (pad_x + 4, cy + _ty(F18, l, lh)), l, cn_font=F18, en_font=M18, fill=C_DESC)
         cy += lh
         
     return img
@@ -301,10 +289,10 @@ def draw_monster_slim(monster: dict, width: int) -> Image.Image:
     # Text vertical align
     # Name 16, Gap 2, Badge 15 -> Total 33
     # Start Y = (62 - 33) // 2 = 14
-    d.text((tx, 12), name_trunc, font=F16B, fill=C_WHITE)
+    draw_text_mixed(d, (tx, 12), name_trunc, cn_font=F16B, en_font=M16, fill=C_WHITE)
     
     if monster["element"]:
-        d.text((tx, 32), f"{monster['element']}抗性", font=F13B, fill=mc_rgb)
+        draw_text_mixed(d, (tx, 32), f"{monster['element']}抗性", cn_font=F13B, en_font=M13, fill=mc_rgb)
         
     return img
 
@@ -334,8 +322,8 @@ def draw_global_card(data: dict) -> Image.Image:
         bh = th + ih
         bim = Image.new("RGBA", (inner_w, bh), (0,0,0,0))
         bd = ImageDraw.Draw(bim)
-        
-        bd.text((0,0), title, font=F28B, fill=tcol)
+
+        draw_text_mixed(bd, (0,0), title, cn_font=F28B, en_font=M28, fill=tcol)
         cy = th
         for im in item_imgs:
             bim.alpha_composite(im, (0, cy))
@@ -383,7 +371,7 @@ def draw_floor_card(floor: dict, main_color: tuple) -> Image.Image:
             bh = th + ih
             bim = Image.new("RGBA", (inner_w, bh), (0,0,0,0))
             bd = ImageDraw.Draw(bim)
-            bd.text((0,0), title, font=F28B, fill=tcol)
+            draw_text_mixed(bd, (0,0), title, cn_font=F28B, en_font=M28, fill=tcol)
             cy = th
             for im in item_imgs:
                 bim.alpha_composite(im, (0, cy))
@@ -401,7 +389,7 @@ def draw_floor_card(floor: dict, main_color: tuple) -> Image.Image:
             bh = th + ih
             bim = Image.new("RGBA", (inner_w, bh), (0,0,0,0))
             bd = ImageDraw.Draw(bim)
-            bd.text((0,0), title, font=F28B, fill=tcol)
+            draw_text_mixed(bd, (0,0), title, cn_font=F28B, en_font=M28, fill=tcol)
             
             for i, im in enumerate(item_imgs):
                 r, c = divmod(i, 4)
@@ -415,14 +403,14 @@ def draw_floor_card(floor: dict, main_color: tuple) -> Image.Image:
     _draw_rounded_rect(img, 0, 0, cw, H, 16, C_CARD_BG, outline=C_BORDER)
     
     # Header Draw
-    d.text((pad, pad), floor["name"], font=F34B, fill=main_color)
+    draw_text_mixed(d, (pad, pad), floor["name"], cn_font=F34B, en_font=M34, fill=main_color)
     d.line([(pad, pad + 34 + 12), (cw - pad, pad + 34 + 12)], fill=(255,255,255,20), width=2)
     
     if floor["cost"]:
         c_txt = f"消耗疲劳: {floor['cost']}"
         cw_meta = int(F22B.getlength(c_txt)) + 24
         _draw_rounded_rect(img, cw - pad - cw_meta, pad + 4, cw - pad, pad + 34, 6, (255,255,255,25))
-        d.text((cw - pad - cw_meta + 12, pad + 4 + _ty(F22B, c_txt, 30)), c_txt, font=F22B, fill=(187,187,187,255))
+        draw_text_mixed(d, (cw - pad - cw_meta + 12, pad + 4 + _ty(F22B, c_txt, 30)), c_txt, cn_font=F22B, en_font=M22, fill=(187,187,187,255))
         
     cy = pad + hdr_h
     for bim in b_imgs:
@@ -443,11 +431,11 @@ def render(html: str) -> bytes:
     h_img = Image.new("RGBA", (INNER_W, hdr_h), (0,0,0,0))
     hd = ImageDraw.Draw(h_img)
     
-    hd.text(((INNER_W - tw)//2, 0), data["title"], font=F72B, fill=C_WHITE)
+    draw_text_mixed(hd, ((INNER_W - tw)//2, 0), data["title"], cn_font=F72B, en_font=M72, fill=C_WHITE)
     if data["subtitle"]:
         sw = int(F26.getlength(data["subtitle"]))
         _draw_rounded_rect(h_img, (INNER_W - sw - 56)//2, 85, (INNER_W + sw + 56)//2, 85 + 46, 23, (0,0,0,128), outline=(255,255,255,38))
-        hd.text(((INNER_W - sw)//2, 85 + _ty(F26, data["subtitle"], 46)), data["subtitle"], font=F26, fill=(204,204,204,255))
+        draw_text_mixed(hd, ((INNER_W - sw)//2, 85 + _ty(F26, data["subtitle"], 46)), data["subtitle"], cn_font=F26, en_font=M26, fill=(204,204,204,255))
 
     # 2. Content Cards
     c_imgs = []
