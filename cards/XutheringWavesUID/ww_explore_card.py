@@ -78,7 +78,6 @@ def _draw_rounded_rect(canvas: Image.Image, x0: int, y0: int, x1: int, y1: int,
     ImageDraw.Draw(block).rounded_rectangle([0, 0, w - 1, h - 1], radius=r, fill=fill, outline=outline, width=width)
     canvas.alpha_composite(block, (x0, y0))
 
-@lru_cache(maxsize=64)
 def _get_h_gradient(w: int, h: int, left_rgba: tuple, right_rgba: tuple) -> Image.Image:
     grad = Image.new("RGBA", (w, 1))
     for xi in range(w):

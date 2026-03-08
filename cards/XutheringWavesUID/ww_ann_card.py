@@ -25,7 +25,7 @@ C_TEXT_SUB  = (149, 165, 166, 255)  # #95a5a6
 RE_COLOR = re.compile(r"(?:color|background):\s*([^;]+)")
 
 
-from . import draw_text_mixed, M12, M14, M15, M16, M17, M18, M20, M22, M24, M26, M28, M30, M32, M34, M36, M38, M42, M48, M72
+from . import draw_text_mixed, M12, M14, M15, M16, M17, M18, M20, M22, M24, M26, M28, M30, M32, M34, M36, M38, M42, M48, M72, _b64_img, _b64_fit, _round_mask
 
 # 使用包级统一字体对象（从包里导入以复用同一实例）
 from . import F11, F12, F12B, F13, F14, F14B, F20, F20B, F22B, F26B, F28B
@@ -46,23 +46,7 @@ def parse_color(c_str: str, default=(52, 152, 219, 255)) -> tuple:
     return default
 
 
-# 图片预处理与缓存
-
-@lru_cache(maxsize=128)
-def _b64_img(src: str) -> Image.Image:
-    if "," in src:
-        src = src.split(",", 1)[1]
-    return Image.open(BytesIO(base64.b64decode(src))).convert("RGBA")
-
-@lru_cache(maxsize=128)
-def _b64_fit(src: str, w: int, h: int) -> Image.Image:
-    return ImageOps.fit(_b64_img(src), (w, h), Image.Resampling.LANCZOS)
-
-@lru_cache(maxsize=64)
-def _round_mask(w: int, h: int, r: int) -> Image.Image:
-    mask = Image.new("L", (w, h), 0)
-    ImageDraw.Draw(mask).rounded_rectangle([0, 0, w - 1, h - 1], radius=r, fill=255)
-    return mask
+# 图片加载/缓存委托给包级实现（避免 data: URI 被本地缓存）
 
 def _draw_rounded_rect(canvas: Image.Image, x0: int, y0: int,
                        x1: int, y1: int, r: int, fill: tuple, outline=None, width=1) -> None:

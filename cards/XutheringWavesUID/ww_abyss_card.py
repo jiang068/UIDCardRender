@@ -77,7 +77,6 @@ def _ty(font, text: str, box_h: int) -> int:
 
 # 图片加载/缓存委托给包级实现（避免 data: URI 被本地缓存）
 
-@lru_cache(maxsize=64)
 def _get_rounded_rect_block(w: int, h: int, r: int, fill: tuple) -> Image.Image:
     block = Image.new("RGBA", (w, h), (0, 0, 0, 0))
     ImageDraw.Draw(block).rounded_rectangle([0, 0, w - 1, h - 1], radius=r, fill=fill)
@@ -92,7 +91,6 @@ def _draw_rounded_rect(canvas: Image.Image, x0: int, y0: int,
     block = _get_rounded_rect_block(w, h, r, fill)
     canvas.alpha_composite(block, (x0, y0))
 
-@lru_cache(maxsize=64)
 def _get_h_gradient(w: int, h: int, left_rgba: tuple, right_rgba: tuple) -> Image.Image:
     grad_1d = Image.new("RGBA", (w, 1))
     for xi in range(w):

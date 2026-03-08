@@ -121,7 +121,6 @@ def _draw_gradient_text(canvas: Image.Image, xy: tuple, text: str, font, top_col
     canvas.paste(grad, (x + bbox[0], y + bbox[1]), t_mask)
 
 # --- 预渲染可复用底板以提速 ---
-@lru_cache(maxsize=4)
 def _get_cached_role_base(card_w: int, card_h: int, is_5star: bool) -> Image.Image:
     bg = Image.new("RGBA", (card_w, card_h), (0,0,0,0))
     d = ImageDraw.Draw(bg)
@@ -137,7 +136,6 @@ def _get_cached_role_base(card_w: int, card_h: int, is_5star: bool) -> Image.Ima
     _draw_rounded_rect(bg, 0, 0, card_w, card_h, 10, (0,0,0,50))
     return bg
 
-@lru_cache(maxsize=4)
 def _get_cached_info_base(item_w: int, item_h: int, highlight: bool) -> Image.Image:
     cell = Image.new("RGBA", (item_w, item_h), (0,0,0,0))
     cd = ImageDraw.Draw(cell)

@@ -77,7 +77,6 @@ def _paste_rounded(canvas: Image.Image, img: Image.Image, x: int, y: int, r: int
     w, h = img.size
     canvas.paste(img, (x, y), _round_mask(w, h, r))
 
-@lru_cache(maxsize=64)
 def _get_h_gradient(w: int, h: int, left_rgba: tuple, right_rgba: tuple) -> Image.Image:
     grad = Image.new("RGBA", (w, 1))
     for xi in range(w):
@@ -90,7 +89,6 @@ def _get_h_gradient(w: int, h: int, left_rgba: tuple, right_rgba: tuple) -> Imag
         ))
     return grad.resize((w, h), Image.NEAREST)
 
-@lru_cache(maxsize=64)
 def _get_v_gradient(w: int, h: int, top_rgba: tuple, bottom_rgba: tuple) -> Image.Image:
     grad = Image.new("RGBA", (1, h))
     for yi in range(h):
