@@ -2,26 +2,18 @@
 
 from __future__ import annotations
 
+import math
 from io import BytesIO
 
 from bs4 import BeautifulSoup
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageChops
 
 # 避免循环导入，直接引入工具函数并局部生成字体
-from . import get_font, draw_text_mixed, _b64_img, _b64_fit
-
-F12 = get_font(12, family='cn')
-F14 = get_font(14, family='cn')
-F15 = get_font(15, family='cn')
-F16 = get_font(16, family='cn')
-F20 = get_font(20, family='cn')
-F36 = get_font(36, family='cn')
-
-M12 = get_font(12, family='mono')
-M13 = get_font(13, family='mono')
-M14 = get_font(14, family='mono')
-M15 = get_font(15, family='mono')
-M16 = get_font(16, family='mono')
+from . import (
+    get_font, draw_text_mixed, _b64_img, _b64_fit,
+    F12, F14, F16, F20, F36,
+    M12, M13, M14, M15, M16
+)
 
 # 画布基础属性
 W = 1000
@@ -70,9 +62,9 @@ def draw_bg(canvas: Image.Image, w: int, h: int, bg_src: str):
         for x in range(sw):
             dist = math.hypot(x - cx, y - cy)
             ratio = min(dist / max_dist, 1.0)
-            r = int(26 + (15 - 26) * ratio)
-            g = int(27 + (16 - 27) * ratio)
-            b = int(32 + (20 - 32) * ratio)
+            r = int(34 + (15 - 34) * ratio)
+            g = int(35 + (16 - 35) * ratio)
+            b = int(40 + (20 - 40) * ratio)
             grad.putpixel((x, y), (r, g, b, 255))
     canvas.alpha_composite(grad.resize((w, h), Image.Resampling.LANCZOS))
     
@@ -86,7 +78,7 @@ def draw_bg(canvas: Image.Image, w: int, h: int, bg_src: str):
     # 网格掩码
     grid = Image.new("RGBA", (w, h), (0, 0, 0, 0))
     gd = ImageDraw.Draw(grid)
-    grid_c = (255, 255, 255, 8) 
+    grid_c = (38, 39, 44, 180)
     for x in range(0, w, 50): gd.line([(x, 0), (x, h)], fill=grid_c, width=1)
     for y in range(0, h, 50): gd.line([(0, y), (w, y)], fill=grid_c, width=1)
     
@@ -104,9 +96,8 @@ def render(html: str) -> bytes:
     data = parse_html(html)
     prefix = data["prefix"]
     
-    # 因为这是一个静态排版的帮助卡片，所以总高度直接定死以求排版绝对稳定
-    # 根据 HTML 原样估算所需高度：
-    H = 920
+    # 扩大整体画布高度以容纳修复后的行距
+    H = 1040
     canvas = Image.new("RGBA", (W, H), C_BG)
     draw_bg(canvas, W, H, data["bg_url"])
     d = ImageDraw.Draw(canvas)
@@ -117,54 +108,57 @@ def render(html: str) -> bytes:
     d.polygon([(PAD, y), (PAD + 6, y), (PAD + 3, y + 40), (PAD - 3, y + 40)], fill=C_ACCENT)
     draw_text_mixed(d, (PAD + 20, y + 2), "抽卡记录帮助", cn_font=F36, en_font=F36, fill=C_TEXT)
     title_w = int(F36.getlength("抽卡记录帮助"))
-    draw_text_mixed(d, (PAD + 20 + title_w + 10, y + 22), "// HELP GUIDE", cn_font=M14, en_font=M14, fill=C_SUBTEXT)
+    # 英文减小字号对齐
+    draw_text_mixed(d, (PAD + 20 + title_w + 10, y + 22), "// HELP GUIDE", cn_font=F14, en_font=M12, fill=C_SUBTEXT)
     y += 40 + 25
     
-    # 辅助函数: 绘制基础的 section 块
     def draw_section_bg(sx, sy, sh, border_left_color=None):
         sec = Image.new("RGBA", (INNER_W, sh), (255, 255, 255, 8))
         canvas.alpha_composite(sec, (sx, sy))
         d.rectangle([sx, sy, sx + INNER_W, sy + sh], outline=C_BORDER, width=1)
         if border_left_color:
             d.line([(sx, sy), (sx, sy + sh)], fill=border_left_color, width=3)
-        # 右上角装饰角
         d.line([(sx + INNER_W - 15, sy), (sx + INNER_W, sy)], fill=C_ACCENT, width=2)
         d.line([(sx + INNER_W, sy), (sx + INNER_W, sy + 15)], fill=C_ACCENT, width=2)
 
     # ================== STEP 01 ==================
-    sec1_h = 360
+    sec1_h = 400 # 增加高度避免内部元素拥挤
     draw_section_bg(PAD, y, sec1_h)
     draw_text_mixed(d, (PAD + 20, y + 20), ">> STEP 01: 获取数据", cn_font=F20, en_font=M16, fill=C_ACCENT)
-    sy = y + 55
+    
+    # 增加间距以防和 Tab 标签重叠 (从 55 增加到 80)
+    sy = y + 80
     
     # General Tab
     pg_y = sy
     d.rectangle([PAD + 20, pg_y, W - PAD - 20, pg_y + 90], fill=(0, 0, 0, 51), outline=(255, 255, 255, 25), width=1)
     
-    # 绘制带切角的标签 (PLATFORM :: GENERAL)
     lx = PAD + 15
     d.polygon([(lx, pg_y), (lx + 160, pg_y), (lx + 155, pg_y - 25), (lx - 5, pg_y - 25)], fill=C_TEXT)
-    draw_text_mixed(d, (lx + 5, pg_y - 20), "PLATFORM :: GENERAL", cn_font=M12, en_font=M12, fill=(0,0,0,255))
+    draw_text_mixed(d, (lx + 5, pg_y - 20), "PLATFORM :: GENERAL", cn_font=F12, en_font=M12, fill=(0,0,0,255))
     
     py = pg_y + 15
     d.rectangle([PAD + 35, py, W - PAD - 35, py + 60], fill=(255, 230, 0, 12), outline=(255, 230, 0, 51), width=1)
-    draw_text_mixed(d, (PAD + 50, py + 12), "方式一：自动获取", cn_font=F16, en_font=F16, fill=C_ACCENT)
-    draw_text_mixed(d, (PAD + 185, py + 15), "// LOGGED-IN USERS", cn_font=M12, en_font=M12, fill=C_SUBTEXT)
+    draw_text_mixed(d, (PAD + 50, py + 12), "方式一：自动获取", cn_font=F16, en_font=M14, fill=C_ACCENT)
+    draw_text_mixed(d, (PAD + 185, py + 15), "// LOGGED-IN USERS", cn_font=F12, en_font=M12, fill=C_SUBTEXT)
     d.line([(PAD + 50, py + 35), (W - PAD - 50, py + 35)], fill=(255, 230, 0, 51), width=1)
     
-    draw_text_mixed(d, (PAD + 50, py + 42), "如果已登录，无需提取链接，直接发送指令即可：", cn_font=F14, en_font=F14, fill=(221, 221, 221, 255))
+    draw_text_mixed(d, (PAD + 50, py + 42), "如果已登录，无需提取链接，直接发送指令即可：", cn_font=F14, en_font=M12, fill=(221, 221, 221, 255))
     code_text1 = f"{prefix}导入抽卡记录"
-    d.rectangle([PAD + 350, py + 40, PAD + 350 + int(M15.getlength(code_text1)) + 20, py + 65], fill=(0,0,0,255), outline=(51,51,51,255))
+    # 使用 F16 而不是 M15 来测量长度，避免中文算错宽度
+    code1_w = int(F16.getlength(code_text1))
+    d.rectangle([PAD + 350, py + 40, PAD + 350 + code1_w + 20, py + 65], fill=(0,0,0,255), outline=(51,51,51,255))
     d.line([(PAD + 350, py + 40), (PAD + 350, py + 65)], fill=C_ACCENT, width=3)
-    draw_text_mixed(d, (PAD + 360, py + 43), code_text1, cn_font=M15, en_font=M15, fill=(221, 221, 221, 255))
+    # cn_font 强制换回支持中文的 F16
+    draw_text_mixed(d, (PAD + 360, py + 43), code_text1, cn_font=F16, en_font=M14, fill=(221, 221, 221, 255))
 
     sy += 90 + 40
     
-    # PC Tab (Split Layout)
+    # PC Tab
     pg_y = sy
     d.rectangle([PAD + 20, pg_y, W - PAD - 20, pg_y + 160], fill=(0, 0, 0, 51), outline=(255, 255, 255, 25), width=1)
     d.polygon([(lx, pg_y), (lx + 120, pg_y), (lx + 115, pg_y - 25), (lx - 5, pg_y - 25)], fill=C_TEXT)
-    draw_text_mixed(d, (lx + 10, pg_y - 20), "PLATFORM :: PC", cn_font=M12, en_font=M12, fill=(0,0,0,255))
+    draw_text_mixed(d, (lx + 10, pg_y - 20), "PLATFORM :: PC", cn_font=F12, en_font=M12, fill=(0,0,0,255))
     
     col_y = pg_y + 15
     col_w1 = 360
@@ -174,38 +168,41 @@ def render(html: str) -> bytes:
     
     # 工具方式
     d.rectangle([cx1, col_y, cx1 + col_w1, col_y + 130], fill=(255, 255, 255, 5), outline=(255, 255, 255, 25))
-    draw_text_mixed(d, (cx1 + 15, col_y + 12), "方式二：使用工具", cn_font=F16, en_font=F16, fill=C_TEXT)
-    draw_text_mixed(d, (cx1 + 150, col_y + 15), "// TOOL", cn_font=M12, en_font=M12, fill=C_SUBTEXT)
+    draw_text_mixed(d, (cx1 + 15, col_y + 12), "方式二：使用工具", cn_font=F16, en_font=M14, fill=C_TEXT)
+    draw_text_mixed(d, (cx1 + 150, col_y + 15), "// TOOL", cn_font=F12, en_font=M12, fill=C_SUBTEXT)
     d.line([(cx1 + 15, col_y + 35), (cx1 + col_w1 - 15, col_y + 35)], fill=(255, 255, 255, 25), width=1)
     
     d.rectangle([cx1 + 15, col_y + 50, cx1 + 35, col_y + 68], fill=(255, 230, 0, 25))
-    draw_text_mixed(d, (cx1 + 18, col_y + 52), "01", cn_font=M14, en_font=M14, fill=C_ACCENT)
-    draw_text_mixed(d, (cx1 + 45, col_y + 51), "发送", cn_font=F14, en_font=F14, fill=(204, 204, 204, 255))
-    draw_text_mixed(d, (cx1 + 75, col_y + 52), f"{prefix}抽卡工具", cn_font=M14, en_font=M14, fill=C_ACCENT)
-    draw_text_mixed(d, (cx1 + 75 + int(M14.getlength(f"{prefix}抽卡工具")) + 5, col_y + 51), "获取工具。", cn_font=F14, en_font=F14, fill=(204, 204, 204, 255))
+    draw_text_mixed(d, (cx1 + 18, col_y + 52), "01", cn_font=F14, en_font=M12, fill=C_ACCENT)
+    draw_text_mixed(d, (cx1 + 45, col_y + 51), "发送", cn_font=F14, en_font=M12, fill=(204, 204, 204, 255))
+    
+    cmd_tool = f"{prefix}抽卡工具"
+    cmd_tool_w = int(F14.getlength(cmd_tool))
+    draw_text_mixed(d, (cx1 + 75, col_y + 52), cmd_tool, cn_font=F14, en_font=M12, fill=C_ACCENT)
+    draw_text_mixed(d, (cx1 + 75 + cmd_tool_w + 5, col_y + 51), "获取工具。", cn_font=F14, en_font=M12, fill=(204, 204, 204, 255))
     
     d.rectangle([cx1 + 15, col_y + 80, cx1 + 35, col_y + 98], fill=(255, 230, 0, 25))
-    draw_text_mixed(d, (cx1 + 18, col_y + 82), "02", cn_font=M14, en_font=M14, fill=C_ACCENT)
-    draw_text_mixed(d, (cx1 + 45, col_y + 81), "游戏内打开 寻访记录，运行工具提取。", cn_font=F14, en_font=F14, fill=(204, 204, 204, 255))
+    draw_text_mixed(d, (cx1 + 18, col_y + 82), "02", cn_font=F14, en_font=M12, fill=C_ACCENT)
+    draw_text_mixed(d, (cx1 + 45, col_y + 81), "游戏内打开 寻访记录，运行工具提取。", cn_font=F14, en_font=M12, fill=(204, 204, 204, 255))
     
     # 手动方式
     d.rectangle([cx2, col_y, cx2 + col_w2, col_y + 130], fill=(255, 255, 255, 5), outline=(255, 255, 255, 25))
-    draw_text_mixed(d, (cx2 + 15, col_y + 12), "方式三：手动获取", cn_font=F16, en_font=F16, fill=C_TEXT)
-    draw_text_mixed(d, (cx2 + 150, col_y + 15), "// MANUAL", cn_font=M12, en_font=M12, fill=C_SUBTEXT)
+    draw_text_mixed(d, (cx2 + 15, col_y + 12), "方式三：手动获取", cn_font=F16, en_font=M14, fill=C_TEXT)
+    draw_text_mixed(d, (cx2 + 150, col_y + 15), "// MANUAL", cn_font=F12, en_font=M12, fill=C_SUBTEXT)
     d.line([(cx2 + 15, col_y + 35), (cx2 + col_w2 - 15, col_y + 35)], fill=(255, 255, 255, 25), width=1)
     
     d.rectangle([cx2 + 15, col_y + 45, cx2 + 35, col_y + 63], fill=(255, 230, 0, 25))
-    draw_text_mixed(d, (cx2 + 18, col_y + 47), "01", cn_font=M14, en_font=M14, fill=C_ACCENT)
-    draw_text_mixed(d, (cx2 + 45, col_y + 46), "游戏内打开 寻访记录 页面。", cn_font=F14, en_font=F14, fill=(204, 204, 204, 255))
+    draw_text_mixed(d, (cx2 + 18, col_y + 47), "01", cn_font=F14, en_font=M12, fill=C_ACCENT)
+    draw_text_mixed(d, (cx2 + 45, col_y + 46), "游戏内打开 寻访记录 页面。", cn_font=F14, en_font=M12, fill=(204, 204, 204, 255))
     
     d.rectangle([cx2 + 15, col_y + 70, cx2 + 35, col_y + 88], fill=(255, 230, 0, 25))
-    draw_text_mixed(d, (cx2 + 18, col_y + 72), "02", cn_font=M14, en_font=M14, fill=C_ACCENT)
-    draw_text_mixed(d, (cx2 + 45, col_y + 71), "打开日志：", cn_font=F14, en_font=F14, fill=(204, 204, 204, 255))
-    draw_text_mixed(d, (cx2 + 115, col_y + 72), r"%USERPROFILE%\AppData\...", cn_font=M14, en_font=M14, fill=C_ACCENT)
+    draw_text_mixed(d, (cx2 + 18, col_y + 72), "02", cn_font=F14, en_font=M12, fill=C_ACCENT)
+    draw_text_mixed(d, (cx2 + 45, col_y + 71), "打开日志：", cn_font=F14, en_font=M12, fill=(204, 204, 204, 255))
+    draw_text_mixed(d, (cx2 + 115, col_y + 72), r"%USERPROFILE%\AppData\...", cn_font=F14, en_font=M12, fill=C_ACCENT)
     
     d.rectangle([cx2 + 15, col_y + 95, cx2 + 35, col_y + 113], fill=(255, 230, 0, 25))
-    draw_text_mixed(d, (cx2 + 18, col_y + 97), "03", cn_font=M14, en_font=M14, fill=C_ACCENT)
-    draw_text_mixed(d, (cx2 + 45, col_y + 96), "搜索 gacha_char 并复制整条链接。", cn_font=F14, en_font=F14, fill=(204, 204, 204, 255))
+    draw_text_mixed(d, (cx2 + 18, col_y + 97), "03", cn_font=F14, en_font=M12, fill=C_ACCENT)
+    draw_text_mixed(d, (cx2 + 45, col_y + 96), "搜索 gacha_char 并复制整条链接。", cn_font=F14, en_font=M12, fill=(204, 204, 204, 255))
 
     y += sec1_h + 20
     
@@ -214,16 +211,18 @@ def render(html: str) -> bytes:
     draw_section_bg(PAD, y, sec2_h, border_left_color=C_ACCENT)
     draw_text_mixed(d, (PAD + 20, y + 15), ">> STEP 02: 执行导入", cn_font=F20, en_font=M16, fill=C_ACCENT)
     
-    draw_text_mixed(d, (PAD + 40, y + 45), "获得链接后（方式二/三），发送以下命令进行同步：", cn_font=F14, en_font=F14, fill=(204, 204, 204, 255))
+    draw_text_mixed(d, (PAD + 40, y + 45), "获得链接后（方式二/三），发送以下命令进行同步：", cn_font=F14, en_font=M12, fill=(204, 204, 204, 255))
     code_text2 = f"{prefix}导入抽卡记录 <粘贴链接>"
-    d.rectangle([PAD + 40, y + 65, PAD + 40 + int(M16.getlength(code_text2)) + 20, y + 95], fill=(0,0,0,255), outline=(51,51,51,255))
+    code2_w = int(F16.getlength(code_text2))
+    d.rectangle([PAD + 40, y + 65, PAD + 40 + code2_w + 20, y + 95], fill=(0,0,0,255), outline=(51,51,51,255))
     d.line([(PAD + 40, y + 65), (PAD + 40, y + 95)], fill=C_ACCENT, width=3)
-    draw_text_mixed(d, (PAD + 50, y + 69), code_text2, cn_font=M16, en_font=M16, fill=(221, 221, 221, 255))
+    # cn_font 强制换回支持中文的 F16
+    draw_text_mixed(d, (PAD + 50, y + 69), code_text2, cn_font=F16, en_font=M14, fill=(221, 221, 221, 255))
     
     y += sec2_h + 20
 
     # ================== CMD Table ==================
-    sec3_h = 240
+    sec3_h = 260 # 增加高度适配行数
     draw_section_bg(PAD, y, sec3_h)
     draw_text_mixed(d, (PAD + 20, y + 20), ">> 指令列表", cn_font=F20, en_font=M16, fill=C_ACCENT)
     
@@ -232,8 +231,8 @@ def render(html: str) -> bytes:
     tx2 = PAD + INNER_W // 2
     
     # Table Header
-    draw_text_mixed(d, (tx1, ty), "COMMAND // 指令", cn_font=F14, en_font=M14, fill=C_SUBTEXT)
-    draw_text_mixed(d, (tx2, ty), "DESCRIPTION // 说明", cn_font=F14, en_font=M14, fill=C_SUBTEXT)
+    draw_text_mixed(d, (tx1, ty), "COMMAND // 指令", cn_font=F14, en_font=M12, fill=C_SUBTEXT)
+    draw_text_mixed(d, (tx2, ty), "DESCRIPTION // 说明", cn_font=F14, en_font=M12, fill=C_SUBTEXT)
     d.line([(tx1, ty + 25), (PAD + INNER_W - 25, ty + 25)], fill=C_ACCENT, width=2)
     
     # Table Rows
@@ -247,8 +246,9 @@ def render(html: str) -> bytes:
     
     ry = ty + 35
     for cmd, desc in cmds:
-        draw_text_mixed(d, (tx1, ry + 2), cmd, cn_font=M15, en_font=M15, fill=C_TEXT)
-        draw_text_mixed(d, (tx2, ry + 2), desc, cn_font=F14, en_font=F14, fill=(170, 170, 170, 255))
+        # cn_font 换回 F16/F14，解决某某某用了英文字体显示错误的问题
+        draw_text_mixed(d, (tx1, ry + 2), cmd, cn_font=F16, en_font=M14, fill=C_TEXT)
+        draw_text_mixed(d, (tx2, ry + 2), desc, cn_font=F14, en_font=M12, fill=(170, 170, 170, 255))
         d.line([(tx1, ry + 30), (PAD + INNER_W - 25, ry + 30)], fill=(255, 255, 255, 12), width=1)
         ry += 32
         
@@ -257,9 +257,9 @@ def render(html: str) -> bytes:
     # ================== Note & Footer ==================
     d.rectangle([PAD, y, PAD + INNER_W, y + 60], fill=(255, 230, 0, 12))
     d.line([(PAD, y), (PAD, y + 60)], fill=C_SUBTEXT, width=3)
-    draw_text_mixed(d, (PAD + 15, y + 10), "TIP:", cn_font=M14, en_font=M14, fill=C_TEXT)
-    draw_text_mixed(d, (PAD + 55, y + 9), "提取的抽卡链接具有时效性，超时请重新打开游戏记录页刷新。", cn_font=F14, en_font=F14, fill=C_SUBTEXT)
-    draw_text_mixed(d, (PAD + 55, y + 31), "每次导入操作会自动与现有数据进行合并，不会导致旧数据丢失。", cn_font=F14, en_font=F14, fill=C_SUBTEXT)
+    draw_text_mixed(d, (PAD + 15, y + 10), "TIP:", cn_font=F14, en_font=M12, fill=C_TEXT)
+    draw_text_mixed(d, (PAD + 55, y + 9), "提取的抽卡链接具有时效性，超时请重新打开游戏记录页刷新。", cn_font=F14, en_font=M12, fill=C_SUBTEXT)
+    draw_text_mixed(d, (PAD + 55, y + 31), "每次导入操作会自动与现有数据进行合并，不会导致旧数据丢失。", cn_font=F14, en_font=M12, fill=C_SUBTEXT)
     
     if data["end_logo"]:
         try:
@@ -275,7 +275,7 @@ def render(html: str) -> bytes:
     
     d.line([(PAD, y), (W - PAD, y)], fill=(255, 255, 255, 25), width=1)
     y += 10
-    draw_text_mixed(d, (W - PAD - 330, y + 5), "Endfield Gacha Record // Help Module", cn_font=M12, en_font=M12, fill=C_SUBTEXT)
+    draw_text_mixed(d, (W - PAD - 330, y + 5), "Endfield Gacha Record // Help Module", cn_font=F12, en_font=M12, fill=C_SUBTEXT)
 
     # 最终输出
     out_rgb = Image.new("RGB", canvas.size, C_BG[:3])

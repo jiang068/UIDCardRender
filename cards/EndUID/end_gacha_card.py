@@ -9,21 +9,12 @@ from bs4 import BeautifulSoup
 from PIL import Image, ImageDraw, ImageFilter, ImageChops
 
 # 避免循环导入，直接引入工具函数并局部生成字体
-from . import get_font, draw_text_mixed, _b64_img, _b64_fit
-
-F12 = get_font(12, family='cn')
-F14 = get_font(14, family='cn')
-F16 = get_font(16, family='cn')
-F26 = get_font(26, family='cn')
-F48 = get_font(48, family='cn')
-
-M10 = get_font(10, family='mono')
-M12 = get_font(12, family='mono')
-M14 = get_font(14, family='mono')
-M16 = get_font(16, family='mono')
-
-O36 = get_font(36, family='oswald')
-O38 = get_font(38, family='oswald')
+from . import (
+    get_font, draw_text_mixed, _b64_img, _b64_fit,
+    F12, F14, F16, F26, F48,
+    M10, M12, M14, M16,
+    O36, O38
+)
 
 # 画布基础属性
 W = 1000
@@ -150,23 +141,23 @@ def draw_bg_and_illustration(canvas: Image.Image, data: dict, w: int, h: int):
         for x in range(sw):
             dist = math.hypot(x - cx, y - cy)
             ratio = min(dist / max_dist, 1.0)
-            r = int(26 + (15 - 26) * ratio)
-            g = int(27 + (16 - 27) * ratio)
-            b = int(32 + (20 - 32) * ratio)
+            r = int(34 + (15 - 34) * ratio)
+            g = int(35 + (16 - 35) * ratio)
+            b = int(40 + (20 - 40) * ratio)
             grad.putpixel((x, y), (r, g, b, 255))
     canvas.alpha_composite(grad.resize((w, h), Image.Resampling.LANCZOS))
     
     if data["bg_url"]:
         try:
             bg_img = _b64_fit(data["bg_url"], w, h).convert("RGBA")
-            bg_img.putalpha(Image.new("L", (w, h), 38)) 
+            bg_img.putalpha(Image.new("L", (w, h), 25)) 
             canvas.alpha_composite(bg_img)
         except Exception: pass
 
     # 网格掩码
     grid = Image.new("RGBA", (w, h), (0, 0, 0, 0))
     gd = ImageDraw.Draw(grid)
-    grid_c = (255, 255, 255, 8) 
+    grid_c = (38, 39, 44, 180)
     for x in range(0, w, 40): gd.line([(x, 0), (x, h)], fill=grid_c, width=1)
     for y in range(0, h, 40): gd.line([(0, y), (w, y)], fill=grid_c, width=1)
     mask = Image.new("L", (w, h), 255)

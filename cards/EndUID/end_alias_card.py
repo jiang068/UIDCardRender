@@ -8,9 +8,11 @@ from bs4 import BeautifulSoup
 from PIL import Image, ImageDraw, ImageFilter, ImageChops
 
 # 从 __init__.py 导入字体与工具函数
-from . import F12, F16, F32, M12, M16, M32
-from . import O12, O16, O32
-from . import get_font, draw_text_mixed, _b64_img, _b64_fit, _round_mask
+from . import (
+    F12, F16, F32, M12, M16, M32,
+    O12, O16, O32,
+    get_font, draw_text_mixed, _b64_img, _b64_fit, _round_mask
+)
 
 # 画布基础属性 (宽度固定，高度自适应)
 W = 600

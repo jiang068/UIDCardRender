@@ -3,22 +3,18 @@
 from __future__ import annotations
 
 import math
+import re
 from io import BytesIO
 
 from bs4 import BeautifulSoup
 from PIL import Image, ImageDraw, ImageFilter, ImageChops
 
 # 避免循环导入，直接引入工具函数并局部生成字体
-from . import get_font, draw_text_mixed, _b64_img, _b64_fit
-
-F16 = get_font(16, family='cn')
-F24 = get_font(24, family='cn')
-F30 = get_font(30, family='cn')
-F56 = get_font(56, family='cn')
-
-M12 = get_font(12, family='mono')
-M22 = get_font(22, family='mono')
-M24 = get_font(24, family='mono')
+from . import (
+    get_font, draw_text_mixed, _b64_img, _b64_fit,
+    F12, F16, F18, F24, F30, F56,
+    M12, M22, M24
+)
 
 # 画布基础属性
 W = 1000
@@ -38,7 +34,6 @@ R_COLORS = {
     4: (163, 102, 255, 255),
     3: (0, 145, 255, 255)
 }
-
 
 def parse_html(html: str) -> dict:
     soup = BeautifulSoup(html, "lxml")
@@ -62,18 +57,15 @@ def parse_html(html: str) -> dict:
     total_el = soup.select_one(".page-subtitle")
     if total_el: data["total"] = total_el.get_text(strip=True).replace("TOTAL", "").strip()
 
-    # 判断是角色还是武器列表 (通过是否包含 item-left-info 里的职业角标判断)
     if soup.select_one(".item-left-info"):
         data["list_type"] = "char"
     else:
         data["list_type"] = "weapon"
 
-    # Groups 解析
     for g_sec in soup.select(".group-section"):
         g_title_el = g_sec.select_one(".group-title")
         if not g_title_el: continue
             
-        # 移除 span.group-count 获取纯文本
         clone_title = BeautifulSoup(str(g_title_el), "lxml").select_one(".group-title")
         count_span = clone_title.select_one("span")
         if count_span: count_span.decompose()
@@ -118,9 +110,9 @@ def draw_bg(canvas: Image.Image, w: int, h: int, bg_src: str):
         for x in range(sw):
             dist = math.hypot(x - cx, y - cy)
             ratio = min(dist / max_dist, 1.0)
-            r = int(26 + (15 - 26) * ratio)
-            g = int(27 + (16 - 27) * ratio)
-            b = int(32 + (20 - 32) * ratio)
+            r = int(34 + (15 - 34) * ratio)
+            g = int(35 + (16 - 35) * ratio)
+            b = int(40 + (20 - 40) * ratio)
             grad.putpixel((x, y), (r, g, b, 255))
             
     canvas.alpha_composite(grad.resize((w, h), Image.Resampling.LANCZOS))
@@ -128,13 +120,13 @@ def draw_bg(canvas: Image.Image, w: int, h: int, bg_src: str):
     if bg_src:
         try:
             bg_img = _b64_fit(bg_src, w, h).convert("RGBA")
-            bg_img.putalpha(Image.new("L", (w, h), 25)) # opacity 0.1
+            bg_img.putalpha(Image.new("L", (w, h), 25)) 
             canvas.alpha_composite(bg_img)
         except Exception: pass
 
     grid = Image.new("RGBA", (w, h), (0, 0, 0, 0))
     gd = ImageDraw.Draw(grid)
-    grid_c = (255, 255, 255, 8) 
+    grid_c = (38, 39, 44, 180)
     for x in range(0, w, 40): gd.line([(x, 0), (x, h)], fill=grid_c, width=1)
     for y in range(0, h, 40): gd.line([(0, y), (w, y)], fill=grid_c, width=1)
     
@@ -151,30 +143,24 @@ def draw_bg(canvas: Image.Image, w: int, h: int, bg_src: str):
 def render(html: str) -> bytes:
     data = parse_html(html)
     
-    # ---------------- 1. 高度预计算 ----------------
     cur_y = PAD
-    
-    # Page Title
     cur_y += 60 + 30 + 30 
     
-    # Grid settings
     cols = 5
     gap = 12
-    item_w = (INNER_W - gap * (cols - 1)) // cols # 约 169px
-    item_h = int(item_w * 220 / 160)              # 约 232px
+    item_w = (INNER_W - gap * (cols - 1)) // cols 
+    item_h = int(item_w * 220 / 160)               
     img_h = int(item_h * 0.78)
     
-    # Groups
     group_heights = []
     for g in data["groups"]:
-        gh = 40 # title row + margin
+        gh = 40 
         rows = math.ceil(len(g["items"]) / cols)
         if rows > 0:
             gh += rows * item_h + max(0, rows - 1) * gap
         group_heights.append(gh)
         cur_y += gh + 30
         
-    # Footer
     cur_y += 10 + 40 + 20 
     total_h = max(cur_y, 600)
     
@@ -186,18 +172,22 @@ def render(html: str) -> bytes:
     y = PAD
     
     # === Page Title ===
+    # 中文名称（当前角色/当前武器）保持原位（y-5 视觉对齐）
     draw_text_mixed(d, (PAD, y - 5), data["title"], cn_font=F56, en_font=F56, fill=C_TEXT)
-    draw_text_mixed(d, (PAD, y + 60), f"TOTAL {data['total']}", cn_font=M24, en_font=M24, fill=C_SUBTEXT)
+    # 英文标题 TOTAL 部分单独下移（y+60 是行高，再加 15px 左右的英文补偿）
+    draw_text_mixed(d, (PAD, y + 60 + 15), f"TOTAL {data['total']}", cn_font=F24, en_font=M24, fill=C_SUBTEXT)
     y += 60 + 30 + 30
     
     # === Groups ===
     for idx, g in enumerate(data["groups"]):
         # Group Header
         d.polygon([(PAD, y), (PAD + 6, y), (PAD + 3, y + 24), (PAD - 3, y + 24)], fill=C_ACCENT)
+        # 中文分类名保持原位（y-3 视觉对齐）
         draw_text_mixed(d, (PAD + 15, y - 3), g["name"], cn_font=F30, en_font=F30, fill=C_TEXT)
         
         name_w = int(F30.getlength(g["name"]))
-        draw_text_mixed(d, (PAD + 15 + name_w + 10, y + 5), str(len(g["items"])), cn_font=M22, en_font=M22, fill=C_SUBTEXT)
+        # 分类数量数字：在 y 基础上额外下移 12px
+        draw_text_mixed(d, (PAD + 15 + name_w + 10, y + 12), str(len(g["items"])), cn_font=F18, en_font=M22, fill=C_SUBTEXT)
         
         y += 35
         d.line([(PAD, y), (W - PAD, y)], fill=(255, 255, 255, 25), width=2)
@@ -209,10 +199,8 @@ def render(html: str) -> bytes:
             cx = PAD + c * (item_w + gap)
             cy = y + r * (item_h + gap)
             
-            # 卡片背景
             d.rectangle([cx, cy, cx + item_w, cy + item_h], fill=(26, 26, 31, 255))
             
-            # 主图
             if item["img"]:
                 try:
                     img = _b64_fit(item["img"], item_w, img_h)
@@ -220,10 +208,10 @@ def render(html: str) -> bytes:
                 except Exception: pass
             else:
                 d.rectangle([cx, cy, cx + item_w, cy + img_h], fill=(30, 30, 35, 255))
+                # 占位符文字下移 6px 居中
                 n_text = item["name"][:2]
-                draw_text_mixed(d, (cx + item_w//2 - 12, cy + img_h//2 - 10), n_text, cn_font=F16, en_font=F16, fill=(68, 68, 68, 255))
+                draw_text_mixed(d, (cx + item_w//2 - 12, cy + img_h//2 + 6), n_text, cn_font=F16, en_font=F16, fill=(68, 68, 68, 255))
                 
-            # 左上角图标 (只有角色有)
             if data["list_type"] == "char":
                 icon_y = cy + 5
                 for ic_src in item["icons"]:
@@ -240,17 +228,29 @@ def render(html: str) -> bytes:
                         
             # 底部信息条
             d.rectangle([cx, cy + img_h, cx + item_w, cy + item_h], fill=(230, 230, 230, 255))
-            # 文本限制长度处理
-            n_w = int(F24.getlength(item["name"]))
-            if n_w > item_w - 16:
-                short_name = item["name"]
-                while short_name and int(F24.getlength(short_name + "...")) > item_w - 16:
-                    short_name = short_name[:-1]
-                draw_text_mixed(d, (cx + 8, cy + img_h + 10), short_name + "...", cn_font=F24, en_font=F24, fill=(26, 26, 26, 255))
-            else:
-                draw_text_mixed(d, (cx + 8, cy + img_h + 10), item["name"], cn_font=F24, en_font=F24, fill=(26, 26, 26, 255))
+            
+            # [核心修复] 卡片名称绘制：中文不偏移，英文/数字下移
+            def draw_item_name(draw, text, pos, font_cn, font_en):
+                curr_x, curr_y = pos
+                # 正则匹配拆分中文与非中文
+                parts = re.split(r'([a-zA-Z0-9\s\-\.\!\?]+)', text)
+                for part in parts:
+                    if not part: continue
+                    is_en = bool(re.match(r'[a-zA-Z0-9\s\-\.\!\?]+', part))
+                    # 英文/数字下移 20% 字号（约 5px）
+                    offset_y = 5 if is_en else 0
+                    draw_text_mixed(draw, (curr_x, curr_y + offset_y), part, cn_font=font_cn, en_font=font_en, fill=(26, 26, 26, 255))
+                    curr_x += int(font_cn.getlength(part))
+
+            # 执行绘制名称
+            n_text = item["name"]
+            if int(F24.getlength(n_text)) > item_w - 16:
+                while n_text and int(F24.getlength(n_text + "...")) > item_w - 16:
+                    n_text = n_text[:-1]
+                n_text += "..."
+            
+            draw_item_name(d, n_text, (cx + 8, cy + img_h + 10), F24, F24)
                 
-            # 稀有度条
             rc = R_COLORS.get(item["rarity"], (139, 139, 139, 255))
             d.rectangle([cx, cy + item_h - 4, cx + item_w, cy + item_h], fill=rc)
             
@@ -274,9 +274,9 @@ def render(html: str) -> bytes:
         except Exception: pass
         
     fw = int(M12.getlength("ENDFIELD WIKI"))
-    draw_text_mixed(d, (W - PAD - fw, y + 14), "ENDFIELD WIKI", cn_font=M12, en_font=M12, fill=C_SUBTEXT)
+    # 页脚英文下移 6px
+    draw_text_mixed(d, (W - PAD - fw, y + 14 + 6), "ENDFIELD WIKI", cn_font=F12, en_font=M12, fill=C_SUBTEXT)
 
-    # 最终输出
     out_rgb = Image.new("RGB", canvas.size, C_BG[:3])
     out_rgb.paste(canvas, mask=canvas.split()[3])
     buf = BytesIO()

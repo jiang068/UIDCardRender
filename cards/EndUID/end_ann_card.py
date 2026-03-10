@@ -8,22 +8,11 @@ from io import BytesIO
 from bs4 import BeautifulSoup
 from PIL import Image, ImageDraw, ImageFilter
 
-# 避免循环导入，直接引入工具函数并局部生成字体
-from . import get_font, draw_text_mixed, _b64_img, _b64_fit, _round_mask
-
-F14 = get_font(14, family='cn')
-F15 = get_font(15, family='cn')
-F16 = get_font(16, family='cn')
-F18 = get_font(18, family='cn')
-F20 = get_font(20, family='cn')
-F28 = get_font(28, family='cn')
-F36 = get_font(36, family='cn')
-F42 = get_font(42, family='cn')
-
-M14 = get_font(14, family='mono')
-M15 = get_font(15, family='mono')
-M16 = get_font(16, family='mono')
-M18 = get_font(18, family='mono')
+# 引入工具函数并生成字体
+from . import (F14, F15, F16, F18, F20, F28, F36, F42,
+            M14, M15, M16, M18, 
+            get_font, draw_text_mixed, _b64_img, _b64_fit, _round_mask
+)
 
 # 画布基础属性
 W = 1100
@@ -111,10 +100,9 @@ def draw_bg(canvas: Image.Image, w: int, h: int):
         for x in range(sw):
             dist = math.hypot(x - cx, y - cy)
             ratio = min(dist / max_dist, 1.0)
-            # #1a1b20 (26,27,32) -> #0f1014 (15,16,20)
-            r = int(26 + (15 - 26) * ratio)
-            g = int(27 + (16 - 27) * ratio)
-            b = int(32 + (20 - 32) * ratio)
+            r = int(34 + (15 - 34) * ratio)
+            g = int(35 + (16 - 35) * ratio)
+            b = int(40 + (20 - 40) * ratio)
             grad.putpixel((x, y), (r, g, b, 255))
             
     grad = grad.resize((w, h), Image.Resampling.LANCZOS)
@@ -123,7 +111,7 @@ def draw_bg(canvas: Image.Image, w: int, h: int):
     # 绘制网格
     grid = Image.new("RGBA", (w, h), (0, 0, 0, 0))
     gd = ImageDraw.Draw(grid)
-    grid_c = (255, 255, 255, 8) 
+    grid_c = (38, 39, 44, 180)
     for x in range(0, w, 40): gd.line([(x, 0), (x, h)], fill=grid_c, width=1)
     for y in range(0, h, 40): gd.line([(0, y), (w, y)], fill=grid_c, width=1)
     

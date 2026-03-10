@@ -9,26 +9,12 @@ from bs4 import BeautifulSoup
 from PIL import Image, ImageDraw, ImageFilter, ImageChops
 
 # 避免循环导入，直接引入工具函数并局部生成字体
-from . import get_font, draw_text_mixed, _b64_img, _b64_fit
-
-F12 = get_font(12, family='cn')
-F14 = get_font(14, family='cn')
-F15 = get_font(15, family='cn')
-F16 = get_font(16, family='cn')
-F18 = get_font(18, family='cn')
-F20 = get_font(20, family='cn')
-F24 = get_font(24, family='cn')
-F28 = get_font(28, family='cn')
-F96 = get_font(96, family='cn')
-
-M12 = get_font(12, family='mono')
-M14 = get_font(14, family='mono')
-M16 = get_font(16, family='mono')
-
-O14 = get_font(14, family='oswald')
-O18 = get_font(18, family='oswald')
-O20 = get_font(20, family='oswald')
-O24 = get_font(24, family='oswald')
+from . import (
+    get_font, draw_text_mixed, _b64_img, _b64_fit,
+    F12, F14, F15, F16, F18, F20, F24, F28, F96,
+    M12, M14, M16,
+    O14, O18, O20, O24
+)
 
 # 画布基础属性
 W = 800
@@ -155,22 +141,22 @@ def draw_bg(canvas: Image.Image, w: int, h: int, bg_src: str):
         for x in range(sw):
             dist = math.hypot(x - cx, y - cy)
             ratio = min(dist / max_dist, 1.0)
-            r = int(30 + (15 - 30) * ratio)
-            g = int(31 + (16 - 31) * ratio)
-            b = int(36 + (20 - 36) * ratio)
+            r = int(34 + (15 - 34) * ratio)
+            g = int(35 + (16 - 35) * ratio)
+            b = int(40 + (20 - 40) * ratio)
             grad.putpixel((x, y), (r, g, b, 255))
     canvas.alpha_composite(grad.resize((w, h), Image.Resampling.LANCZOS))
     
     if bg_src:
         try:
             bg_img = _b64_fit(bg_src, w, h).convert("RGBA")
-            bg_img.putalpha(Image.new("L", (w, h), 51)) # opacity 0.2
+            bg_img.putalpha(Image.new("L", (w, h), 25)) # opacity ~0.1
             canvas.alpha_composite(bg_img)
         except Exception: pass
 
     grid = Image.new("RGBA", (w, h), (0, 0, 0, 0))
     gd = ImageDraw.Draw(grid)
-    grid_c = (255, 255, 255, 10) 
+    grid_c = (38, 39, 44, 180)
     for x in range(0, w, 60): gd.line([(x, 0), (x, h)], fill=grid_c, width=1)
     for y in range(0, h, 60): gd.line([(0, y), (w, y)], fill=grid_c, width=1)
     
@@ -209,10 +195,10 @@ def draw_skew_tag(canvas: Image.Image, d: ImageDraw.ImageDraw, x: int, y: int, i
     
     pts = [(x + skew, y), (x + w + skew, y), (x + w - skew, y + h), (x - skew, y + h)]
     
-    shadow = Image.new("RGBA", (W, 5000), (0,0,0,0)) # 使用超大画布防止裁剪
-    ImageDraw.Draw(shadow).polygon([(p[0]+3, p[1]+3) for p in pts], fill=(0,0,0,102))
+    shadow = Image.new("RGBA", (W, 100), (0,0,0,0))
+    ImageDraw.Draw(shadow).polygon([(p[0]+3, 30+3) for p in pts], fill=(0,0,0,102))
     shadow = shadow.filter(ImageFilter.GaussianBlur(3))
-    canvas.alpha_composite(shadow.crop((0, y-10, W, y+h+10)), (0, y-10))
+    canvas.alpha_composite(shadow, (0, y - 30))
     
     d.polygon(pts, fill=bg_c)
     if not is_element:
@@ -226,7 +212,8 @@ def draw_skew_tag(canvas: Image.Image, d: ImageDraw.ImageDraw, x: int, y: int, i
             ix += 24
         except Exception: pass
         
-    draw_text_mixed(d, (ix, y + 8), text, cn_font=M14, en_font=M14, fill=text_c)
+    # [修正] 基线补偿 y+8 -> y+8-4
+    draw_text_mixed(d, (ix, y + 4), text, cn_font=F14, en_font=M14, fill=text_c)
     return w + 12
 
 
@@ -342,15 +329,15 @@ def render(html: str) -> bytes:
     y = PAD
     
     # === Header Group ===
-    # Name
-    draw_text_mixed(d, (PAD - 4, y - 10), data["name"], cn_font=F96, en_font=F96, fill=C_TEXT)
+    # [修正] 基线补偿 F96 -> y-10-28
+    draw_text_mixed(d, (PAD - 4, y - 38), data["name"], cn_font=F96, en_font=F96, fill=C_TEXT)
     y += 90
     
-    # Stars
+    # Stars [修正] 往上挪 9px
     for i in range(data["rarity"]):
         cx = PAD + i * 26
-        d.ellipse([cx, y+4, cx + 18, y + 22], fill=C_ACCENT)
-        d.ellipse([cx + 3, y + 7, cx + 15, y + 19], fill=(255, 204, 0, 255))
+        d.ellipse([cx, y-5, cx + 18, y + 13], fill=C_ACCENT)
+        d.ellipse([cx + 3, y - 2, cx + 15, y + 10], fill=(255, 204, 0, 255))
     y += 35
     
     # Tags
@@ -375,16 +362,20 @@ def render(html: str) -> bytes:
         ix = PAD + c * (info_w + info_gap)
         iy = y + r * (58 + info_gap)
         d.rectangle([ix, iy, ix + info_w, iy + 58], fill=C_CARD_BG, outline=(255,255,255,25), width=1)
-        draw_text_mixed(d, (ix + 15, iy + 10), lbl, cn_font=M12, en_font=M12, fill=C_SUBTEXT)
+        # [修正] 基线补偿 M12 -> iy+10-4
+        draw_text_mixed(d, (ix + 15, iy + 6), lbl, cn_font=F12, en_font=M12, fill=C_SUBTEXT)
         f_val = F16 if "专长" in lbl else F18
-        draw_text_mixed(d, (ix + 15, iy + 30), val, cn_font=f_val, en_font=f_val, fill=C_TEXT)
+        # [修正] 基线补偿 iy+30-5
+        draw_text_mixed(d, (ix + 15, iy + 25), val, cn_font=f_val, en_font=f_val, fill=C_TEXT)
     y += 2 * (58 + info_gap) + 20
 
     def draw_section_title(title_cn, title_en):
         d.rectangle([PAD, y + 2, PAD + 6, y + 28], fill=C_ACCENT)
-        draw_text_mixed(d, (PAD + 15, y - 2), title_cn, cn_font=F28, en_font=F28, fill=C_ACCENT)
+        # [修正] 基线补偿 F28 -> y-2-8
+        draw_text_mixed(d, (PAD + 15, y - 10), title_cn, cn_font=F28, en_font=F28, fill=C_ACCENT)
         cn_w = int(F28.getlength(title_cn))
-        draw_text_mixed(d, (PAD + 15 + cn_w + 12, y + 8), title_en, cn_font=M16, en_font=M16, fill=C_SUBTEXT)
+        # [修正] 基线补偿 M16 -> y+8-5
+        draw_text_mixed(d, (PAD + 15 + cn_w + 12, y + 3), title_en, cn_font=F16, en_font=M16, fill=C_SUBTEXT)
         d.line([(PAD, y + 35), (W - PAD, y + 35)], fill=(255, 255, 255, 25), width=2)
         return y + 50
 
@@ -399,7 +390,8 @@ def render(html: str) -> bytes:
         d.line([(PAD, y + 38), (W - PAD, y + 38)], fill=(255, 255, 255, 25), width=1)
         for i, h_txt in enumerate(headers):
             hw = int(O14.getlength(h_txt))
-            draw_text_mixed(d, (PAD + i * col_w + (col_w - hw)//2, y + 10), h_txt, cn_font=O14, en_font=O14, fill=C_ACCENT)
+            # [修正] 基线补偿 O14 -> y+10-4
+            draw_text_mixed(d, (PAD + i * col_w + (col_w - hw)//2, y + 6), h_txt, cn_font=F14, en_font=O14, fill=C_ACCENT)
         y += 38
         
         # Table Rows
@@ -410,14 +402,14 @@ def render(html: str) -> bytes:
             for i, val in enumerate(vals):
                 vw = int(O20.getlength(val))
                 fc = (136, 136, 136, 255) if i == 0 else C_TEXT
-                draw_text_mixed(d, (PAD + i * col_w + (col_w - vw)//2, y + 8), val, cn_font=O20, en_font=O20, fill=fc)
+                # [修正] 基线补偿 O20 -> y+8-6
+                draw_text_mixed(d, (PAD + i * col_w + (col_w - vw)//2, y + 2), val, cn_font=F20, en_font=O20, fill=fc)
             y += 40
         y += 30
 
     def draw_feature_card_bg(start_y, ch):
         bg = Image.new("RGBA", (INNER_W, ch))
         bd = ImageDraw.Draw(bg)
-        # Linear gradient 90deg
         for xi in range(INNER_W):
             alpha = int(12 * (1 - (xi / INNER_W)))
             bd.line([(xi, 0), (xi, ch)], fill=(255, 255, 255, alpha))
@@ -440,19 +432,22 @@ def render(html: str) -> bytes:
             draw_feature_card_bg(start_y, ch)
             
             ty = start_y + 15
-            draw_text_mixed(d, (PAD + 15, ty), t["name"], cn_font=F20, en_font=F20, fill=C_TEXT)
+            # [修正] 基线补偿 ty-6
+            draw_text_mixed(d, (PAD + 15, ty - 6), t["name"], cn_font=F20, en_font=F20, fill=C_TEXT)
             ty += 35
             
             for eff in t["effects"]:
                 if eff["desc"]:
                     pw = int(M12.getlength(eff["phase"]))
                     d.rectangle([PAD + 15, ty, PAD + 15 + pw + 12, ty + 20], fill=(51, 51, 51, 255), radius=2)
-                    draw_text_mixed(d, (PAD + 21, ty + 2), eff["phase"], cn_font=M12, en_font=M12, fill=C_ACCENT)
+                    # [修正] 基线补偿 ty+2-4
+                    draw_text_mixed(d, (PAD + 21, ty - 2), eff["phase"], cn_font=F12, en_font=M12, fill=C_ACCENT)
                     ty += 24
                     
                     lines = wrap_text(eff["desc"], F15, INNER_W - 30)
                     for line in lines:
-                        draw_text_mixed(d, (PAD + 15, ty), line, cn_font=F15, en_font=F15, fill=(204, 204, 204, 255))
+                        # [修正] 基线补偿 ty-4
+                        draw_text_mixed(d, (PAD + 15, ty - 4), line, cn_font=F15, en_font=O14, fill=(204, 204, 204, 255))
                         ty += desc_lh
                     ty += 8
             y += ch + 10
@@ -469,10 +464,12 @@ def render(html: str) -> bytes:
             draw_feature_card_bg(start_y, ch)
             
             ty = start_y + 15
-            draw_text_mixed(d, (PAD + 15, ty), s["name"], cn_font=F20, en_font=F20, fill=C_TEXT)
+            # [修正] 基线补偿 ty-6
+            draw_text_mixed(d, (PAD + 15, ty - 6), s["name"], cn_font=F20, en_font=F20, fill=C_TEXT)
             ty += 35
             for line in lines:
-                draw_text_mixed(d, (PAD + 15, ty), line, cn_font=F15, en_font=F15, fill=(204, 204, 204, 255))
+                # [修正] 基线补偿 ty-4
+                draw_text_mixed(d, (PAD + 15, ty - 4), line, cn_font=F15, en_font=O14, fill=(204, 204, 204, 255))
                 ty += desc_lh
             y += ch + 10
         y += 20
@@ -496,11 +493,13 @@ def render(html: str) -> bytes:
         ty = start_y + 15
         for i, bs in enumerate(data["base_skills"]):
             lines, rh = bs_heights[i]
-            draw_text_mixed(d, (PAD + 15, ty), bs["name"], cn_font=F16, en_font=F16, fill=(221, 221, 221, 255))
+            # [修正] 基线补偿 ty-5
+            draw_text_mixed(d, (PAD + 15, ty - 5), bs["name"], cn_font=F16, en_font=F16, fill=(221, 221, 221, 255))
             
             dy = ty
             for line in lines:
-                draw_text_mixed(d, (PAD + 155, dy), line, cn_font=F15, en_font=F15, fill=(204, 204, 204, 255))
+                # [修正] 基线补偿 dy-4
+                draw_text_mixed(d, (PAD + 155, dy - 4), line, cn_font=F15, en_font=O14, fill=(204, 204, 204, 255))
                 dy += desc_lh
                 
             d.line([(PAD + 15, ty + rh - 6), (W - PAD - 15, ty + rh - 6)], fill=(255, 255, 255, 12), width=1)
@@ -526,17 +525,18 @@ def render(html: str) -> bytes:
         ty = start_y + 15
         for i, p in enumerate(data["potentials"]):
             lines, rh = pot_heights[i]
-            
-            draw_text_mixed(d, (PAD + 15, ty), f"P{p['rank']}", cn_font=O24, en_font=O24, fill=C_ACCENT)
-            draw_text_mixed(d, (PAD + 70, ty + 2), p["name"], cn_font=F16, en_font=F16, fill=C_TEXT)
+            # [修正] 基线补偿 O24 -> ty-7
+            draw_text_mixed(d, (PAD + 15, ty - 7), f"P{p['rank']}", cn_font=F24, en_font=O24, fill=C_ACCENT)
+            # [修正] 基线补偿 ty+2-5
+            draw_text_mixed(d, (PAD + 70, ty - 3), p["name"], cn_font=F16, en_font=F16, fill=C_TEXT)
             
             dy = ty + 28
             for line in lines:
-                draw_text_mixed(d, (PAD + 70, dy), line, cn_font=F15, en_font=F15, fill=(204, 204, 204, 255))
+                # [修正] 基线补偿 dy-4
+                draw_text_mixed(d, (PAD + 70, dy - 4), line, cn_font=F15, en_font=O14, fill=(204, 204, 204, 255))
                 dy += desc_lh
                 
             d.line([(PAD + 15, ty + rh - 6), (W - PAD - 15, ty + rh - 6)], fill=(255, 255, 255, 25), width=1)
-            d.line([(PAD + 15, ty + rh - 6), (W - PAD - 15, ty + rh - 6)], fill=(0, 0, 0, 102), width=1) # dash effect mock
             ty += rh
         y += ch + 20
 
@@ -557,7 +557,8 @@ def render(html: str) -> bytes:
         except Exception: pass
         
     fw = int(O18.getlength(f"WIKI DATABASE // {data['name']}"))
-    draw_text_mixed(d, (W - 40 - fw, fy + 28), f"WIKI DATABASE // {data['name']}", cn_font=O18, en_font=O18, fill=C_SUBTEXT)
+    # [修正] 基线补偿 O18 -> fy+28-5
+    draw_text_mixed(d, (W - 40 - fw, fy + 23), f"WIKI DATABASE // {data['name']}", cn_font=F18, en_font=O18, fill=C_SUBTEXT)
 
     out_rgb = Image.new("RGB", canvas.size, C_BG[:3])
     out_rgb.paste(canvas, mask=canvas.split()[3])

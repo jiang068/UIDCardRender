@@ -9,18 +9,12 @@ from bs4 import BeautifulSoup
 from PIL import Image, ImageDraw, ImageChops
 
 # 避免循环导入，直接引入工具函数并局部生成字体
-from . import get_font, draw_text_mixed, _b64_img, _b64_fit
-
-F12 = get_font(12, family='cn')
-F16 = get_font(16, family='cn')
-F18 = get_font(18, family='cn')
-F28 = get_font(28, family='cn')
-F56 = get_font(56, family='cn')
-
-M12 = get_font(12, family='mono')
-M16 = get_font(16, family='mono')
-M20 = get_font(20, family='mono')
-M24 = get_font(24, family='mono')
+# [修复] 补全了缺失的中文字体映射 F20, F24
+from . import (
+    get_font, draw_text_mixed, _b64_img, _b64_fit,
+    F12, F16, F18, F20, F24, F28, F56,
+    M12, M16, M18, M20, M24
+)
 
 # 画布基础属性
 W = 1000
@@ -97,9 +91,9 @@ def draw_bg(canvas: Image.Image, w: int, h: int, bg_src: str):
         for x in range(sw):
             dist = math.hypot(x - cx, y - cy)
             ratio = min(dist / max_dist, 1.0)
-            r = int(26 + (15 - 26) * ratio)
-            g = int(27 + (16 - 27) * ratio)
-            b = int(32 + (20 - 32) * ratio)
+            r = int(34 + (15 - 34) * ratio)
+            g = int(35 + (16 - 35) * ratio)
+            b = int(40 + (20 - 40) * ratio)
             grad.putpixel((x, y), (r, g, b, 255))
             
     canvas.alpha_composite(grad.resize((w, h), Image.Resampling.LANCZOS))
@@ -113,7 +107,7 @@ def draw_bg(canvas: Image.Image, w: int, h: int, bg_src: str):
 
     grid = Image.new("RGBA", (w, h), (0, 0, 0, 0))
     gd = ImageDraw.Draw(grid)
-    grid_c = (255, 255, 255, 8) 
+    grid_c = (38, 39, 44, 180)
     for x in range(0, w, 40): gd.line([(x, 0), (x, h)], fill=grid_c, width=1)
     for y in range(0, h, 40): gd.line([(0, y), (w, y)], fill=grid_c, width=1)
     
@@ -142,14 +136,12 @@ def render(html: str) -> bytes:
         cur_y += 100 # no banners height
     else:
         for b in data["banners"]:
-            # 计算内部内容需要的高度
             bh = 25 * 2 # padding Y
             bh += 25 # type
             bh += 34 # name
             if b["target"]: bh += 24
             if b["time_text"]: bh += 26
             if b["events"]: bh += 30
-            # 最小卡片高度限制 (不能比图标 120px + pad 50px 矮)
             bh = max(170, bh)
             banner_heights.append(bh)
             cur_y += bh + 30
@@ -166,8 +158,10 @@ def render(html: str) -> bytes:
     y = PAD
     
     # === Page Title ===
-    draw_text_mixed(d, (PAD, y - 5), "当前卡池", cn_font=F56, en_font=F56, fill=C_TEXT)
-    draw_text_mixed(d, (PAD, y + 60), "CURRENT BANNERS", cn_font=M24, en_font=M24, fill=C_SUBTEXT)
+    # [修复] F56 补偿约 17px 使其视觉居中
+    draw_text_mixed(d, (PAD, y + 12), "当前卡池", cn_font=F56, en_font=F56, fill=C_TEXT)
+    # [修复] M24 补偿约 7px
+    draw_text_mixed(d, (PAD, y + 60 + 7), "CURRENT BANNERS", cn_font=F24, en_font=M24, fill=C_SUBTEXT)
     y += 60 + 35 + 30
     
     # === Banners ===
@@ -179,16 +173,14 @@ def render(html: str) -> bytes:
             bh = banner_heights[i]
             bx = PAD
             
-            # 卡片基础背景与透明度(未开始状态)
             card_img = Image.new("RGBA", (INNER_W, bh), (0,0,0,0))
             cd = ImageDraw.Draw(card_img)
             
-            # 绘制带有 135deg 渐变的背景框
             for cx in range(INNER_W):
                 alpha = int(20 + (5 - 20) * (cx / INNER_W))
                 cd.line([(cx, 0), (cx, bh)], fill=(255, 255, 255, alpha))
             cd.rectangle([0, 0, INNER_W, bh], outline=(255, 255, 255, 25), width=1)
-            cd.rectangle([0, 0, 6, bh], fill=C_ACCENT) # 左侧黄边
+            cd.rectangle([0, 0, 6, bh], fill=C_ACCENT) 
             
             # 图标
             ic_x, ic_y = 30, (bh - 120)//2
@@ -199,24 +191,27 @@ def render(html: str) -> bytes:
                     card_img.paste(ic, (ic_x, ic_y))
                 except Exception: pass
             else:
-                draw_text_mixed(cd, (ic_x + 50, ic_y + 40), "?", cn_font=M24, en_font=M24, fill=(51, 51, 51, 255))
+                draw_text_mixed(cd, (ic_x + 50, ic_y + 40 + 7), "?", cn_font=F24, en_font=M24, fill=(51, 51, 51, 255))
                 
             # 右侧信息
             tx = ic_x + 120 + 30
             ty = 25
             
-            draw_text_mixed(cd, (tx, ty), b["type"], cn_font=M20, en_font=M20, fill=C_ACCENT)
+            # [修复] 采用 F20 支持中文类型标签；补偿 6px
+            draw_text_mixed(cd, (tx, ty + 6), b["type"], cn_font=F20, en_font=M20, fill=C_ACCENT)
             ty += 28
             
-            draw_text_mixed(cd, (tx, ty), b["name"], cn_font=F28, en_font=F28, fill=C_TEXT)
+            # [修复] F28 补偿 8px
+            draw_text_mixed(cd, (tx, ty + 8), b["name"], cn_font=F28, en_font=F28, fill=C_TEXT)
             ty += 34
             
             if b["target"]:
-                draw_text_mixed(cd, (tx, ty), f"UP: {b['target']}", cn_font=F18, en_font=M18, fill=(204, 204, 204, 255))
+                # [修复] 补偿 5px
+                draw_text_mixed(cd, (tx, ty + 5), f"UP: {b['target']}", cn_font=F18, en_font=M18, fill=(204, 204, 204, 255))
                 ty += 24
                 
             if b["time_text"]:
-                t_w = int(M16.getlength(b["time_text"])) + 24
+                t_w = int(F16.getlength(b["time_text"])) + 24
                 tc = (136, 136, 136, 255)
                 bg_c = (255, 255, 255, 12)
                 if b["time_status"] == "active":
@@ -227,7 +222,8 @@ def render(html: str) -> bytes:
                     bg_c = (255, 230, 0, 25)
                     
                 cd.rounded_rectangle([tx, ty, tx + t_w, ty + 24], radius=2, fill=bg_c)
-                draw_text_mixed(cd, (tx + 12, ty + 3), b["time_text"], cn_font=M16, en_font=M16, fill=tc)
+                # [修复] 采用 F16 支持中文时间文本；补偿 5px
+                draw_text_mixed(cd, (tx + 12, ty + 3 + 5), b["time_text"], cn_font=F16, en_font=M16, fill=tc)
                 ty += 30
                 
             if b["events"]:
@@ -235,12 +231,13 @@ def render(html: str) -> bytes:
                 for ev in b["events"]:
                     ev_w = int(F16.getlength(ev)) + 24
                     cd.rounded_rectangle([ev_x, ty, ev_x + ev_w, ty + 24], radius=2, fill=(255, 255, 255, 15))
-                    draw_text_mixed(cd, (ev_x + 12, ty + 3), ev, cn_font=F16, en_font=F16, fill=(170, 170, 170, 255))
+                    # [修复] 补偿 5px
+                    draw_text_mixed(cd, (ev_x + 12, ty + 3 + 5), ev, cn_font=F16, en_font=F16, fill=(170, 170, 170, 255))
                     ev_x += ev_w + 8
             
-            # 合并卡片到主画布 (处理未开始半透明逻辑)
+            # 合并卡片到主画布
             if b["not_started"]:
-                card_img.putalpha(ImageChops.multiply(card_img.split()[3], Image.new("L", (INNER_W, bh), 153))) # opacity 0.6
+                card_img.putalpha(ImageChops.multiply(card_img.split()[3], Image.new("L", (INNER_W, bh), 153))) 
                 
             canvas.alpha_composite(card_img, (bx, y))
             y += bh + 30
@@ -261,7 +258,8 @@ def render(html: str) -> bytes:
         except Exception: pass
         
     fw = int(M12.getlength("ENDFIELD WIKI"))
-    draw_text_mixed(d, (W - PAD - fw, y + 14), "ENDFIELD WIKI", cn_font=M12, en_font=M12, fill=C_SUBTEXT)
+    # [修复] 基线补偿 4px
+    draw_text_mixed(d, (W - PAD - fw, y + 14 + 4), "ENDFIELD WIKI", cn_font=F12, en_font=M12, fill=C_SUBTEXT)
 
     # 最终输出
     out_rgb = Image.new("RGB", canvas.size, C_BG[:3])

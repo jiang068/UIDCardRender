@@ -9,24 +9,12 @@ from bs4 import BeautifulSoup
 from PIL import Image, ImageDraw, ImageFilter, ImageChops
 
 # 避免循环导入，直接引入工具函数并局部生成字体
-from . import get_font, draw_text_mixed, _b64_img, _b64_fit, _round_mask
-
-F14 = get_font(14, family='cn')
-F16 = get_font(16, family='cn')
-F22 = get_font(22, family='cn')
-F28 = get_font(28, family='cn')
-F48 = get_font(48, family='cn')
-F64 = get_font(64, family='cn')
-
-M14 = get_font(14, family='mono')
-M16 = get_font(16, family='mono')
-M24 = get_font(24, family='mono')
-
-O14 = get_font(14, family='oswald')
-O16 = get_font(16, family='oswald')
-O24 = get_font(24, family='oswald')
-O48 = get_font(48, family='oswald')
-O64 = get_font(64, family='oswald')
+from . import (
+    get_font, draw_text_mixed, _b64_img, _b64_fit, _round_mask,
+    F14, F16, F22, F28, F48, F64,
+    M14, M16, M20, M24,
+    O14, O18, O24, O36, O48, O64
+)
 
 # 画布基础属性
 W = 1000
@@ -70,7 +58,6 @@ def parse_html(html: str) -> dict:
     
     name_el = soup.select_one(".user-name")
     if name_el:
-        # 去除子元素文本 (如 span.uid-tag)
         clone = BeautifulSoup(str(name_el), "lxml").select_one(".user-name")
         for tag in clone.select("span"): tag.decompose()
         data["name"] = clone.get_text(strip=True)
@@ -147,16 +134,15 @@ def parse_html(html: str) -> dict:
 
 
 def draw_bg(canvas: Image.Image, w: int, h: int, bg_src: str):
-    """绘制背景：背景图叠底 + 径向渐变 + 网格装饰"""
+    """绘制背景：偏灰的底色 + 微弱网格"""
     if bg_src:
         try:
             bg_img = _b64_fit(bg_src, w, h).convert("RGBA")
-            # overlay 混色近似
             bg_img.putalpha(Image.new("L", (w, h), 25)) 
             canvas.alpha_composite(bg_img)
         except Exception: pass
 
-    # Radial Gradient
+    # Radial Gradient (调整为更亮的偏灰色 #222328 -> #0f1014)
     sw, sh = w // 10, h // 10
     cx, cy = int(sw * 0.5), int(sh * 0.2)
     grad = Image.new("RGBA", (sw, sh), (0, 0, 0, 0))
@@ -166,18 +152,18 @@ def draw_bg(canvas: Image.Image, w: int, h: int, bg_src: str):
         for x in range(sw):
             dist = math.hypot(x - cx, y - cy)
             ratio = min(dist / max_dist, 1.0)
-            r = int(26 + (15 - 26) * ratio)
-            g = int(27 + (16 - 27) * ratio)
-            b = int(32 + (20 - 32) * ratio)
-            grad.putpixel((x, y), (r, g, b, 230))
+            r = int(34 + (15 - 34) * ratio)
+            g = int(35 + (16 - 35) * ratio)
+            b = int(40 + (20 - 40) * ratio)
+            grad.putpixel((x, y), (r, g, b, 255))
             
     grad = grad.resize((w, h), Image.Resampling.LANCZOS)
     canvas.alpha_composite(grad)
 
-    # Grid Deco
+    # Grid Deco (几乎不可见的超微弱网格)
     grid = Image.new("RGBA", (w, h), (0, 0, 0, 0))
     gd = ImageDraw.Draw(grid)
-    grid_c = (255, 255, 255, 8) 
+    grid_c = (38, 39, 44, 180) 
     for x in range(0, w, 40): gd.line([(x, 0), (x, h)], fill=grid_c, width=1)
     for y in range(0, h, 40): gd.line([(0, y), (w, y)], fill=grid_c, width=1)
     
@@ -198,11 +184,9 @@ def render(html: str) -> bytes:
     # ---------------- 1. 高度预计算阶段 ----------------
     cur_y = PAD
     
-    # 头部 (Avatar 130px)
     cur_y += 130 + 40
     
-    # 仪表盘网格计算
-    dash_col_w = (INNER_W - 15 * 3) // 4  # 约 213px
+    dash_col_w = (INNER_W - 15 * 3) // 4
     dash_row_h = 140
     dash_gap = 15
     grid_matrix = [[False]*4 for _ in range(10)]
@@ -226,14 +210,12 @@ def render(html: str) -> bytes:
     dash_rows = max((pos["r"] for pos in dash_positions), default=0) + 1
     cur_y += dash_rows * dash_row_h + max(0, dash_rows - 1) * dash_gap + 40
     
-    # 干员区标题
     cur_y += 28 + 20
     
-    # 干员网格
     char_cols = 5
     char_gap = 15
-    char_w = (INNER_W - char_gap * (char_cols - 1)) // char_cols  # 约 168px
-    char_h = int(char_w * 280 / 180)                              # 约 261px
+    char_w = (INNER_W - char_gap * (char_cols - 1)) // char_cols
+    char_h = int(char_w * 280 / 180)
     
     char_rows = math.ceil(len(data["chars"]) / char_cols)
     cur_y += char_rows * char_h + max(0, char_rows - 1) * char_gap + PAD
@@ -257,17 +239,16 @@ def render(html: str) -> bytes:
         except Exception: pass
         
     ux = PAD + aw + 30
-    # 名字
     draw_text_mixed(d, (ux, y + 10), data["name"], cn_font=F64, en_font=F64, fill=C_TEXT)
     name_w = int(F64.getlength(data["name"]))
     
-    # UID 标签
+    # UID 标签 (放大字号，颜色调亮)
     if data["uid"]:
         uid_x = ux + name_w + 15
         uid_text = f"UID {data['uid']}"
-        uid_w = int(M16.getlength(uid_text))
-        d.rounded_rectangle([uid_x, y + 36, uid_x + uid_w + 16, y + 36 + 24], radius=4, fill=(255, 255, 255, 12))
-        draw_text_mixed(d, (uid_x + 8, y + 39), uid_text, cn_font=M16, en_font=M16, fill=C_SUBTEXT)
+        uid_w = int(M20.getlength(uid_text))
+        d.rounded_rectangle([uid_x, y + 32, uid_x + uid_w + 20, y + 32 + 30], radius=4, fill=(255, 255, 255, 20))
+        draw_text_mixed(d, (uid_x + 10, y + 35), uid_text, cn_font=M20, en_font=M20, fill=(180, 180, 180, 255))
         
     # 苏醒日
     if data["awake_date"]:
@@ -288,10 +269,17 @@ def render(html: str) -> bytes:
         cw = dash_col_w * item["span"] + dash_gap * (item["span"] - 1)
         ch = dash_row_h
         
-        # 绘制卡片底色 (半透磨砂模拟)
-        c_bg = Image.new("RGBA", (cw, ch), (255, 255, 255, 12))
-        canvas.alpha_composite(c_bg, (cx, cy))
-        d.rectangle([cx, cy, cx + cw, cy + ch], outline=(255, 255, 255, 25), width=1)
+        # 将底层改为亮一点的浅灰色调，保证黑色 Logo 清晰可见
+        d.rectangle([cx, cy, cx + cw, cy + ch], fill=(38, 40, 46, 255), outline=(255, 255, 255, 20), width=1)
+        
+        # 叠加微弱的反光渐变让卡片更立体
+        shine = Image.new("RGBA", (cw, ch), (0,0,0,0))
+        sd = ImageDraw.Draw(shine)
+        for gy in range(ch):
+            for gx in range(cw):
+                alpha = int(15 * (1 - (gx + gy) / (cw + ch)))
+                shine.putpixel((gx, gy), (255, 255, 255, max(0, alpha)))
+        canvas.alpha_composite(shine, (cx, cy))
         
         if dc["type"] == "mission":
             draw_text_mixed(d, (cx + 25, cy + 25), dc["num"], cn_font=F48, en_font=O48, fill=C_TEXT)
@@ -331,10 +319,8 @@ def render(html: str) -> bytes:
             d.rectangle([cx, cy, cx + char_w, cy + char_h], outline=(68, 68, 68, 255), width=1)
             continue
             
-        # 背景
         d.rectangle([cx, cy, cx + char_w, cy + char_h], fill=(34, 34, 34, 255))
         
-        # 头像
         img_h = int(char_h * 0.86)
         if char["avatar"]:
             try:
@@ -342,13 +328,11 @@ def render(html: str) -> bytes:
                 canvas.paste(av, (cx, cy))
             except Exception: pass
             
-        # 职业/属性图标
         icon_y = cy + 6
         for icon_src in char["icons"]:
             if icon_src:
                 try:
                     ic = _b64_fit(icon_src, 36, 36)
-                    # 黑色阴影加强可读性
                     shadow = Image.new("RGBA", (36, 36), (0,0,0,0))
                     shadow.paste((0,0,0,178), ic.split()[3])
                     shadow = shadow.filter(ImageFilter.GaussianBlur(2))
@@ -357,7 +341,6 @@ def render(html: str) -> bytes:
                     icon_y += 36 + 4
                 except Exception: pass
                 
-        # 潜能 (斜边徽章)
         if char["potential"]:
             pot = char["potential"]
             p_val = int(pot.replace("P", "")) if "P" in pot else 1
@@ -370,12 +353,10 @@ def render(html: str) -> bytes:
             by = cy + 6
             skew = 4
             
-            # 半透黑底
             d.polygon([
                 (bx + skew, by), (bx + badge_w + skew, by),
                 (bx + badge_w - skew, by + badge_h), (bx - skew, by + badge_h)
             ], fill=(0, 0, 0, 190))
-            # 对应颜色左边线
             d.polygon([
                 (bx + skew - 3, by), (bx + skew, by),
                 (bx - skew, by + badge_h), (bx - skew - 3, by + badge_h)
@@ -383,25 +364,37 @@ def render(html: str) -> bytes:
             
             draw_text_mixed(d, (bx + 8, by + 1), pot, cn_font=O14, en_font=O14, fill=pc + (255,))
             
-        # 等级文本 (带黑色阴影)
+        # 等级文本 (超大号并带有极强的描边阴影)
         lvl_str = char["level"].replace("Lv.", "")
-        lvl_w = int(O24.getlength(lvl_str)) + int(O14.getlength("Lv."))
-        lx = cx + char_w - 5 - lvl_w
-        ly = cy + img_h - 30
+        lvl_w = int(O36.getlength(lvl_str)) + int(O18.getlength("Lv."))
+        lx = cx + char_w - 6 - lvl_w
+        ly = cy + img_h - 40
         
-        draw_text_mixed(d, (lx + 1, ly + 2), "Lv.", cn_font=O14, en_font=O14, fill=(0,0,0,230), dy_en=5)
-        draw_text_mixed(d, (lx + int(O14.getlength("Lv.")) + 1, ly - 6 + 2), lvl_str, cn_font=O24, en_font=O24, fill=(0,0,0,230))
-        
-        draw_text_mixed(d, (lx, ly), "Lv.", cn_font=O14, en_font=O14, fill=C_TEXT, dy_en=5)
-        draw_text_mixed(d, (lx + int(O14.getlength("Lv.")), ly - 6), lvl_str, cn_font=O24, en_font=O24, fill=C_TEXT)
+        # 全方位多层黑色阴影
+        for dx in range(-2, 3):
+            for dy in range(-2, 3):
+                if dx == 0 and dy == 0: continue
+                draw_text_mixed(d, (lx + dx, ly + 16 + dy), "Lv.", cn_font=O18, en_font=O18, fill=(0,0,0,230))
+                draw_text_mixed(d, (lx + int(O18.getlength("Lv.")) + 2 + dx, ly + dy), lvl_str, cn_font=O36, en_font=O36, fill=(0,0,0,230))
+                
+        # 实际文本
+        draw_text_mixed(d, (lx, ly + 16), "Lv.", cn_font=O18, en_font=O18, fill=C_TEXT)
+        draw_text_mixed(d, (lx + int(O18.getlength("Lv.")) + 2, ly), lvl_str, cn_font=O36, en_font=O36, fill=C_TEXT)
         
         # 底部名字块
         d.rectangle([cx, cy + img_h, cx + char_w, cy + char_h], fill=(230, 230, 230, 255))
-        draw_text_mixed(d, (cx + 10, cy + img_h + 10), char["name"], cn_font=F16, en_font=F16, fill=(26, 26, 26, 255))
+        n_w = int(F22.getlength(char["name"]))
+        short_name = char["name"]
+        if n_w > char_w - 16:
+            while short_name and int(F22.getlength(short_name + "...")) > char_w - 16:
+                short_name = short_name[:-1]
+            short_name += "..."
+        # 放大名字字号，居中偏下微调以填满灰条
+        draw_text_mixed(d, (cx + 8, cy + img_h + 6), short_name, cn_font=F22, en_font=F22, fill=(26, 26, 26, 255))
         
         # 稀有度线
         rc = R_COLORS.get(char["rarity"], (139, 139, 139, 255))
-        d.rectangle([cx, cy + char_h - 3, cx + char_w, cy + char_h], fill=rc)
+        d.rectangle([cx, cy + char_h - 4, cx + char_w, cy + char_h], fill=rc)
         
     # 最终输出
     out_rgb = Image.new("RGB", canvas.size, C_BG[:3])

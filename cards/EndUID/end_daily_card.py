@@ -105,7 +105,7 @@ def parse_html(html: str) -> dict:
 def draw_bg_grid(canvas: Image.Image, w: int, h: int):
     grid = Image.new("RGBA", (w, h), (0, 0, 0, 0))
     d = ImageDraw.Draw(grid)
-    line_c = (255, 255, 255, 8) 
+    line_c = (38, 39, 44, 180)
     for x in range(0, w, 50): d.line([(x, 0), (x, h)], fill=line_c, width=1)
     for y in range(0, h, 50): d.line([(0, y), (w, y)], fill=line_c, width=1)
     canvas.alpha_composite(grid)

@@ -9,13 +9,12 @@ from bs4 import BeautifulSoup
 from PIL import Image, ImageDraw, ImageChops
 
 # 从 __init__.py 导入字体与工具函数
-from . import F14, F16, F20, F48
-from . import M14, M16
-from . import O14, O16, O18, O20
-from . import get_font, draw_text_mixed, _b64_img, _b64_fit
-
-# 特殊字号补充
-F12 = get_font(12, family='cn')
+from . import (
+    F12, F14, F16, F20, F48,
+    M14, M16,
+    O14, O16, O18, O20,
+    get_font, draw_text_mixed, _b64_img, _b64_fit
+)
 
 # 画布基础属性
 W = 1000
@@ -110,7 +109,7 @@ def draw_bg(canvas: Image.Image, w: int, h: int, bg_src: str):
         try:
             bg_img = _b64_fit(bg_src, w, h).convert("RGBA")
             # 模拟 opacity 0.1 和 mix-blend-mode: overlay (使用强透明度近似叠加)
-            bg_img.putalpha(Image.new("L", (w, h), 38)) # 15% 透明度
+            bg_img.putalpha(Image.new("L", (w, h), 25)) # ~10% 透明度
             canvas.alpha_composite(bg_img)
         except Exception: pass
 
@@ -124,10 +123,10 @@ def draw_bg(canvas: Image.Image, w: int, h: int, bg_src: str):
         for x in range(sw):
             dist = math.hypot(x - cx, y - cy)
             ratio = min(dist / max_dist, 1.0)
-            r = int(26 + (15 - 26) * ratio)
-            g = int(27 + (16 - 27) * ratio)
-            b = int(32 + (20 - 32) * ratio)
-            grad.putpixel((x, y), (r, g, b, 230)) # 不要完全遮挡底部 bg
+            r = int(34 + (15 - 34) * ratio)
+            g = int(35 + (16 - 35) * ratio)
+            b = int(40 + (20 - 40) * ratio)
+            grad.putpixel((x, y), (r, g, b, 255))
             
     grad = grad.resize((w, h), Image.Resampling.LANCZOS)
     canvas.alpha_composite(grad)
@@ -135,7 +134,7 @@ def draw_bg(canvas: Image.Image, w: int, h: int, bg_src: str):
     # Grid Deco
     grid = Image.new("RGBA", (w, h), (0, 0, 0, 0))
     gd = ImageDraw.Draw(grid)
-    grid_c = (255, 255, 255, 8) 
+    grid_c = (38, 39, 44, 180)
     for x in range(0, w, 40): gd.line([(x, 0), (x, h)], fill=grid_c, width=1)
     for y in range(0, h, 40): gd.line([(0, y), (w, y)], fill=grid_c, width=1)
     

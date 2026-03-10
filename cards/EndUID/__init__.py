@@ -37,15 +37,17 @@ def get_font(size: int, bold: bool = False, family: Literal['cn', 'mono', 'oswal
             continue
     return ImageFont.load_default()
 
-# 预置常用字号
-_COMMON_SIZES = [10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
-                 22, 24, 26, 28, 30, 32, 34, 36, 38, 40,
-                 42, 46, 48, 52, 56, 60, 72, 80]
+# 预置常用字号和对应的 bold 变量（FxxB），以及对应的等宽英数字体 Mxx 和 英文数字字体 Oxx。
+_COMMON_SIZES = [
+    10, 12, 13, 14, 15, 16, 18, 20, 22, 24, 26, 28, 30, 
+    32, 36, 38, 40, 42, 48, 52, 56, 60, 64, 72, 80, 96, 100, 160
+]
+
 for _s in _COMMON_SIZES:
     globals()[f"F{_s}"] = get_font(_s, family='cn')
     globals()[f"F{_s}B"] = globals()[f"F{_s}"]
     globals()[f"M{_s}"] = get_font(_s, family='mono')
-    globals()[f"O{_s}"] = get_font(_s, family='oswald')
+    globals()[f"O{_s}"] = get_font(_s, family='oswald') 
 
 def find_font_file(family: Literal['cn', 'mono', 'oswald'] = 'cn') -> str | None:
     if family == 'cn':
@@ -171,12 +173,13 @@ _DISPATCH: list[tuple[list[str], str, str]] = [
     
     # 玩家数据卡片
     (['Endfield Player Card', 'char-left-info'], 'end_card', '终末地名片'),
-    (['Endfield Build Card', 'spaceship-section'], 'end_build_card', '终末地建设'),
+    (['Endfield Build Card', 'spaceship-section'], 'end_build', '终末地建设'),
     (['终末地角色别名', 'ALIASES', 'alias-grid'], 'end_alias_card', '终末地别名'),
     
     # 抽卡系统
-    (['Endfield Gacha Record', 'six-star-grid'], 'end_gacha_card', '终末地抽卡记录'),
     (['Endfield Gacha Help', '抽卡记录帮助', 'STEP 01: 获取数据'], 'end_gacha_help', '终末地抽卡帮助'),
+    (['Endfield Gacha Record'], 'end_gacha_card', '终末地抽卡记录'),
+
     
     # Wiki 图鉴系统
     (['Endfield Character Card', 'stats-table', 'feature-card'], 'end_wiki_char', '终末地角色图鉴'),

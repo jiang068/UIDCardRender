@@ -26,6 +26,7 @@ C_WHITE = (255, 255, 255, 255)
 C_DESC = (217, 217, 217, 255)  # rgba(255,255,255,0.85)
 C_CARD_BG = (20, 20, 25, 166)  # rgba(20,20,25,0.65)
 C_BORDER = (255, 255, 255, 38) # rgba(255,255,255,0.15)
+C_TEXT_SUB = (160, 160, 160, 255)
 
 
 # 使用包级统一字体对象（从包里导入以复用同一实例）
@@ -83,6 +84,37 @@ def _draw_rounded_rect(canvas: Image.Image, x0: int, y0: int, x1: int, y1: int,
 def _paste_rounded(canvas: Image.Image, img: Image.Image, x: int, y: int, r: int):
     w, h = img.size
     canvas.paste(img, (x, y), _round_mask(w, h, r))
+
+
+def _get_h_gradient(w: int, h: int, left_rgba: tuple, right_rgba: tuple) -> Image.Image:
+    # Return an RGBA Image with a horizontal gradient from left_rgba to right_rgba
+    grad = Image.new("RGBA", (w, 1))
+    if w <= 0:
+        return Image.new("RGBA", (w, h), (0, 0, 0, 0))
+    for xi in range(w):
+        t = xi / max(w - 1, 1)
+        grad.putpixel((xi, 0), (
+            int(left_rgba[0] + (right_rgba[0] - left_rgba[0]) * t),
+            int(left_rgba[1] + (right_rgba[1] - left_rgba[1]) * t),
+            int(left_rgba[2] + (right_rgba[2] - left_rgba[2]) * t),
+            int(left_rgba[3] + (right_rgba[3] - left_rgba[3]) * t)
+        ))
+    return grad.resize((w, h), Image.NEAREST)
+
+
+def _get_v_gradient(w: int, h: int, top_rgba: tuple, bottom_rgba: tuple) -> Image.Image:
+    grad = Image.new("RGBA", (1, h))
+    if h <= 0:
+        return Image.new("RGBA", (w, h), (0, 0, 0, 0))
+    for yi in range(h):
+        t = yi / max(h - 1, 1)
+        grad.putpixel((0, yi), (
+            int(top_rgba[0] + (bottom_rgba[0] - top_rgba[0]) * t),
+            int(top_rgba[1] + (bottom_rgba[1] - top_rgba[1]) * t),
+            int(top_rgba[2] + (bottom_rgba[2] - top_rgba[2]) * t),
+            int(top_rgba[3] + (bottom_rgba[3] - top_rgba[3]) * t)
+        ))
+    return grad.resize((w, h), Image.NEAREST)
 
 
 # HTML 解析
