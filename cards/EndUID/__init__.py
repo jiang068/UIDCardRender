@@ -174,7 +174,7 @@ _DISPATCH: list[tuple[list[str], str, str]] = [
     # 玩家数据卡片
     (['Endfield Player Card', 'char-left-info'], 'end_card', '终末地名片'),
     (['Endfield Build Card', 'spaceship-section'], 'end_build', '终末地建设'),
-    (['终末地角色别名', 'ALIASES', 'alias-grid'], 'end_alias_card', '终末地别名'),
+    (['终末地角色别名',  'alias-grid'], 'end_alias_card', '终末地别名'),
     
     # 抽卡系统
     (['Endfield Gacha Help', '抽卡记录帮助', 'STEP 01: 获取数据'], 'end_gacha_help', '终末地抽卡帮助'),
@@ -185,7 +185,7 @@ _DISPATCH: list[tuple[list[str], str, str]] = [
     (['Endfield Character Card', 'stats-table', 'feature-card'], 'end_wiki_char', '终末地角色图鉴'),
     (['Endfield Weapon Wiki', 'weapon-img-small'], 'end_wiki_weapon', '终末地武器图鉴'),
     (['卡池信息', 'CURRENT BANNERS', 'banner-card'], 'end_wiki_gacha', '终末地卡池信息'),
-    (['TOTAL', 'group-section', 'item-card'], 'end_wiki_list', '终末地图鉴列表'),
+    (['page-subtitle', 'group-section' ], 'end_wiki_list', '终末地图鉴列表'),
 ]
 
 def render(html: str) -> bytes | None:
