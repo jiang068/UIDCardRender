@@ -243,7 +243,7 @@ _DISPATCH: list[tuple[list[str], str, str]] = [
     (['鸣潮角色卡片', 'ROVER RESONANCE CARD'],      'ww_role_card',      '角色'),
     (['鸣潮深塔'],                                  'ww_abyss_card',     '深塔'),
     (['鸣潮全息战略'],                              'ww_challenge_card', '全息'),
-    (['鸣潮角色别名', 'ALIASES'],                   'ww_alias_card',     '别名'),
+    (['鸣潮角色别名' ],                   'ww_alias_card',     '别名'),
     (['鸣潮公告', 'ann-item'],                      'ww_ann_card',       '公告'),
     (['库洛币'],                                    'ww_bbs_coin',       '库洛币'),
     (['鸣潮探索度', 'SOLARIS EXPEDITION RECORD'],   'ww_explore_card',   '探索度'),
