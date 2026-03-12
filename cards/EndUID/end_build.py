@@ -214,9 +214,9 @@ def draw_bg(canvas: Image.Image, w: int, h: int, bg_src: str):
 
 def draw_section_title(d: ImageDraw.ImageDraw, x: int, y: int, title_cn: str, title_en: str):
     d.rectangle([x, y + 2, x + 4, y + 22], fill=C_ACCENT)
-    draw_text_mixed(d, (x + 12, y - 2), title_cn, cn_font=F20, en_font=F20, fill=C_TEXT)
+    draw_text_mixed(d, (x + 12, y - 2), title_cn, cn_font=F20, en_font=F20, fill=C_TEXT, dy_en=4)
     cn_w = int(F20.getlength(title_cn))
-    draw_text_mixed(d, (x + 12 + cn_w + 10, y + 3), title_en, cn_font=M14, en_font=M14, fill=C_SUBTEXT)
+    draw_text_mixed(d, (x + 12 + cn_w + 10, y + 3), title_en, cn_font=M14, en_font=M14, fill=C_SUBTEXT, dy_en=3)
     return 24
 
 
@@ -286,7 +286,7 @@ def render(html: str) -> bytes:
         except Exception: pass
         
     ux = PAD + 100 + 25
-    draw_text_mixed(d, (ux, y + 5), data["name"], cn_font=F48, en_font=F48, fill=C_TEXT)
+    draw_text_mixed(d, (ux, y + 5), data["name"], cn_font=F48, en_font=F48, fill=C_TEXT, dy_en=10)
     name_w = int(F48.getlength(data["name"]))
     
     if data["uid"]:
@@ -294,7 +294,7 @@ def render(html: str) -> bytes:
         uid_text = f"UID {data['uid']}"
         uid_w = int(M16.getlength(uid_text))
         d.rounded_rectangle([uid_x, y + 25, uid_x + uid_w + 16, y + 25 + 24], radius=4, fill=(255, 255, 255, 12))
-        draw_text_mixed(d, (uid_x + 8, y + 28), uid_text, cn_font=M16, en_font=M16, fill=C_SUBTEXT)
+        draw_text_mixed(d, (uid_x + 8, y + 28), uid_text, cn_font=M16, en_font=M16, fill=C_SUBTEXT, dy_en=3)
         
     # Tags
     tag_y = y + 65
@@ -306,8 +306,8 @@ def render(html: str) -> bytes:
         val_w = int(O18.getlength(val))
         tw = lbl_w + val_w + 5 + 24
         d.rectangle([x, y, x + tw, y + 28], fill=C_PANEL, outline=C_BORDER, width=1)
-        draw_text_mixed(d, (x + 12, y + 4), label, cn_font=lbl_f, en_font=lbl_f, fill=(204, 204, 204, 255))
-        draw_text_mixed(d, (x + 12 + lbl_w + 5, y + 3), val, cn_font=O18, en_font=O18, fill=C_ACCENT)
+        draw_text_mixed(d, (x + 12, y + 4), label, cn_font=lbl_f, en_font=lbl_f, fill=(204, 204, 204, 255), dy_en=3)
+        draw_text_mixed(d, (x + 12 + lbl_w + 5, y + 3), val, cn_font=O18, en_font=O18, fill=C_ACCENT, dy_en=4)
         return tw + 15
         
     tx += draw_tag(tx, tag_y, "LEVEL", data["level"])
@@ -332,7 +332,7 @@ def render(html: str) -> bytes:
     
     sy = y + space_pad
     if not data["rooms"]:
-        draw_text_mixed(d, (W//2 - 60, sy + 20), "暂无舱室数据", cn_font=F16, en_font=F16, fill=(102, 102, 102, 255))
+        draw_text_mixed(d, (W//2 - 60, sy + 20), "暂无舱室数据", cn_font=F16, en_font=F16, fill=(102, 102, 102, 255), dy_en=3)
     else:
         for r_idx in range(room_rows):
             row_items = data["rooms"][r_idx*room_cols : (r_idx+1)*room_cols]
@@ -345,10 +345,10 @@ def render(html: str) -> bytes:
                 d.line([(rx, ry), (rx + room_w, ry)], fill=item["color"], width=2)
                 
                 # Header
-                draw_text_mixed(d, (rx + 14, ry + 12), item["name"], cn_font=F14, en_font=M14, fill=(221, 221, 221, 255))
+                draw_text_mixed(d, (rx + 14, ry + 12), item["name"], cn_font=F14, en_font=M14, fill=(221, 221, 221, 255), dy_en=3)
                 
                 lvl_w = int(O14.getlength(f"Lv.{item['level']}"))
-                draw_text_mixed(d, (rx + room_w - 14 - lvl_w, ry + 13), f"Lv.{item['level']}", cn_font=O14, en_font=O14, fill=C_SUBTEXT)
+                draw_text_mixed(d, (rx + room_w - 14 - lvl_w, ry + 13), f"Lv.{item['level']}", cn_font=O14, en_font=O14, fill=C_SUBTEXT, dy_en=3)
                 
                 # Pips
                 pip_w = 14
@@ -375,7 +375,7 @@ def render(html: str) -> bytes:
                 if not item["chars"]:
                     # 空闲
                     d.rectangle([rx + 14, ay, rx + room_w - 14, ay + 44], outline=(51, 51, 51, 255), width=1)
-                    draw_text_mixed(d, (rx + room_w//2 - 12, ay + 14), "空闲", cn_font=F12, en_font=F12, fill=(68, 68, 68, 255))
+                    draw_text_mixed(d, (rx + room_w//2 - 12, ay + 14), "空闲", cn_font=F12, en_font=F12, fill=(68, 68, 68, 255), dy_en=2)
                 else:
                     curr_x = rx + 14
                     for char in item["chars"]:
@@ -388,7 +388,7 @@ def render(html: str) -> bytes:
                         else:
                             d.rectangle([curr_x, ay, curr_x + 44, ay + 44], outline=(68, 68, 68, 255), width=1)
                             # 虚线效果简化为深灰色实线，居中文字
-                            draw_text_mixed(d, (curr_x + 10, ay + 14), char["text"][:2], cn_font=F12, en_font=F12, fill=(68, 68, 68, 255))
+                            draw_text_mixed(d, (curr_x + 10, ay + 14), char["text"][:2], cn_font=F12, en_font=F12, fill=(68, 68, 68, 255), dy_en=2)
                         curr_x += 44 + 6
                         
     y += spaceship_h + 30
@@ -415,32 +415,32 @@ def render(html: str) -> bytes:
             d.line([(dx, dy + 52), (dx + domain_w, dy + 52)], fill=C_BORDER, width=1)
             
             # Header Name & Level
-            draw_text_mixed(d, (dx + 18, dy + 14), dom["name"], cn_font=F20, en_font=F20, fill=C_TEXT)
+            draw_text_mixed(d, (dx + 18, dy + 14), dom["name"], cn_font=F20, en_font=F20, fill=C_TEXT, dy_en=4)
             name_w = int(F20.getlength(dom["name"]))
             
             lvl_x = dx + 18 + name_w + 12
             d.rectangle([lvl_x, dy + 16, lvl_x + 40, dy + 36], fill=C_PANEL, outline=C_BORDER, width=1)
-            draw_text_mixed(d, (lvl_x + 5, dy + 18), f"Lv.{dom['level']}", cn_font=F14, en_font=O14, fill=C_ACCENT)
+            draw_text_mixed(d, (lvl_x + 5, dy + 18), f"Lv.{dom['level']}", cn_font=F14, en_font=O14, fill=C_ACCENT, dy_en=3)
             
             # Money Badge
             if dom["money_str"]:
                 badge_w = int(M14.getlength(dom["money_str"])) + 50
                 bx = dx + domain_w - 18 - badge_w
                 d.rounded_rectangle([bx, dy + 14, bx + badge_w, dy + 38], radius=4, fill=(0, 0, 0, 64), outline=(255, 255, 255, 15), width=1)
-                draw_text_mixed(d, (bx + 10, dy + 18), "调度券", cn_font=F12, en_font=F12, fill=(102, 102, 102, 255))
+                draw_text_mixed(d, (bx + 10, dy + 18), "调度券", cn_font=F12, en_font=F12, fill=(102, 102, 102, 255), dy_en=2)
                 # 区分高亮部分 (通过空格简单分割)
                 parts = dom["money_str"].split("/")
                 if len(parts) == 2:
-                    draw_text_mixed(d, (bx + 48, dy + 18), parts[0].strip(), cn_font=M14, en_font=M14, fill=C_ACCENT)
+                    draw_text_mixed(d, (bx + 48, dy + 18), parts[0].strip(), cn_font=M14, en_font=M14, fill=C_ACCENT, dy_en=3)
                     p0_w = int(M14.getlength(parts[0].strip()))
-                    draw_text_mixed(d, (bx + 48 + p0_w, dy + 18), f" / {parts[1].strip()}", cn_font=M14, en_font=M14, fill=C_SUBTEXT)
+                    draw_text_mixed(d, (bx + 48 + p0_w, dy + 18), f" / {parts[1].strip()}", cn_font=M14, en_font=M14, fill=C_SUBTEXT, dy_en=3)
                 else:
-                    draw_text_mixed(d, (bx + 48, dy + 18), dom["money_str"], cn_font=M14, en_font=M14, fill=C_SUBTEXT)
+                    draw_text_mixed(d, (bx + 48, dy + 18), dom["money_str"], cn_font=M14, en_font=M14, fill=C_SUBTEXT, dy_en=3)
                     
             # Settlements
             sty = dy + 52 + 15
             if not dom["settlements"]:
-                draw_text_mixed(d, (dx + domain_w//2 - 30, sty + 5), "暂无据点", cn_font=F12, en_font=F12, fill=(102, 102, 102, 255))
+                draw_text_mixed(d, (dx + domain_w//2 - 30, sty + 5), "暂无据点", cn_font=F12, en_font=F12, fill=(102, 102, 102, 255), dy_en=2)
             else:
                 for st in dom["settlements"]:
                     sh = 106
@@ -469,38 +469,38 @@ def render(html: str) -> bytes:
                     tw = int(M12.getlength(st["bat_pct"]))
                     t_pos = (bat_x + 18 - tw//2, bat_y + 24)
                     for ox, oy in [(-1,-1), (1,-1), (-1,1), (1,1), (0,1)]:
-                        draw_text_mixed(d, (t_pos[0]+ox, t_pos[1]+oy), st["bat_pct"], cn_font=M12, en_font=M12, fill=(0, 0, 0, 255))
-                    draw_text_mixed(d, t_pos, st["bat_pct"], cn_font=M12, en_font=M12, fill=(255, 255, 255, 255))
+                        draw_text_mixed(d, (t_pos[0]+ox, t_pos[1]+oy), st["bat_pct"], cn_font=M12, en_font=M12, fill=(0, 0, 0, 255), dy_en=2)
+                    draw_text_mixed(d, t_pos, st["bat_pct"], cn_font=M12, en_font=M12, fill=(255, 255, 255, 255), dy_en=2)
                     
-                    draw_text_mixed(d, (bat_x + 3, bat_y + 64), "调度券", cn_font=F12, en_font=F12, fill=(153, 153, 153, 255))
+                    draw_text_mixed(d, (bat_x + 3, bat_y + 64), "调度券", cn_font=F12, en_font=F12, fill=(153, 153, 153, 255), dy_en=2)
                     
                     # Info Col
                     info_x = bat_x + 36 + 12
                     info_y = sty + 12
                     
-                    draw_text_mixed(d, (info_x, info_y + 2), st["name"], cn_font=F16, en_font=F16, fill=(204, 204, 204, 255))
+                    draw_text_mixed(d, (info_x, info_y + 2), st["name"], cn_font=F16, en_font=F16, fill=(204, 204, 204, 255), dy_en=3)
                     nw = int(F16.getlength(st["name"]))
-                    draw_text_mixed(d, (info_x + nw + 8, info_y + 3), f"Lv.{st['level']}", cn_font=O16, en_font=O16, fill=C_SUBTEXT)
+                    draw_text_mixed(d, (info_x + nw + 8, info_y + 3), f"Lv.{st['level']}", cn_font=O16, en_font=O16, fill=C_SUBTEXT, dy_en=3)
                     
                     money_w = int(M14.getlength(st["money_str"]))
                     mx = dx + domain_w - 15 - 12 - money_w
                     # 区分高亮部分
                     m_parts = st["money_str"].split("/")
                     if len(m_parts) == 2:
-                        draw_text_mixed(d, (mx, info_y + 4), m_parts[0].strip(), cn_font=M14, en_font=M14, fill=C_ACCENT)
+                        draw_text_mixed(d, (mx, info_y + 4), m_parts[0].strip(), cn_font=M14, en_font=M14, fill=C_ACCENT, dy_en=3)
                         mp0_w = int(M14.getlength(m_parts[0].strip()))
-                        draw_text_mixed(d, (mx + mp0_w, info_y + 4), f" / {m_parts[1].strip()}", cn_font=M14, en_font=M14, fill=C_SUBTEXT)
+                        draw_text_mixed(d, (mx + mp0_w, info_y + 4), f" / {m_parts[1].strip()}", cn_font=M14, en_font=M14, fill=C_SUBTEXT, dy_en=3)
                     else:
-                        draw_text_mixed(d, (mx, info_y + 4), st["money_str"], cn_font=M14, en_font=M14, fill=C_SUBTEXT)
+                        draw_text_mixed(d, (mx, info_y + 4), st["money_str"], cn_font=M14, en_font=M14, fill=C_SUBTEXT, dy_en=3)
                         
                     # Exp Row
                     exp_y = info_y + 26
-                    draw_text_mixed(d, (info_x, exp_y), "EXP", cn_font=M12, en_font=M12, fill=(153, 153, 153, 255))
+                    draw_text_mixed(d, (info_x, exp_y), "EXP", cn_font=M12, en_font=M12, fill=(153, 153, 153, 255), dy_en=2)
                     
                     exp_text_w = int(M12.getlength(st["exp_text"]))
                     exp_text_x = dx + domain_w - 15 - 12 - exp_text_w
                     tc = C_ACCENT if st["is_max"] else (153, 153, 153, 255)
-                    draw_text_mixed(d, (exp_text_x, exp_y), st["exp_text"], cn_font=M12, en_font=M12, fill=tc)
+                    draw_text_mixed(d, (exp_text_x, exp_y), st["exp_text"], cn_font=M12, en_font=M12, fill=tc, dy_en=2)
                     
                     bar_x = info_x + 28 + 8
                     bar_w = exp_text_x - bar_x - 8
@@ -512,12 +512,12 @@ def render(html: str) -> bytes:
                         
                     # Officer Row
                     off_y = exp_y + 18
-                    draw_text_mixed(d, (info_x, off_y + 12), "驻守", cn_font=F12, en_font=F12, fill=(153, 153, 153, 255))
+                    draw_text_mixed(d, (info_x, off_y + 12), "驻守", cn_font=F12, en_font=F12, fill=(153, 153, 153, 255), dy_en=2)
                     
                     ox = info_x + 28 + 8
                     if not st["officers"]:
                         d.rectangle([ox, off_y, ox + 40, off_y + 40], outline=(51, 51, 51, 255), width=1)
-                        draw_text_mixed(d, (ox + 16, off_y + 12), "-", cn_font=F16, en_font=F16, fill=(68, 68, 68, 255))
+                        draw_text_mixed(d, (ox + 16, off_y + 12), "-", cn_font=F16, en_font=F16, fill=(68, 68, 68, 255), dy_en=3)
                     else:
                         for off in st["officers"]:
                             if off["type"] == "img":
@@ -528,7 +528,7 @@ def render(html: str) -> bytes:
                                 except Exception: pass
                             else:
                                 d.rectangle([ox, off_y, ox + 40, off_y + 40], outline=(51, 51, 51, 255), width=1)
-                                draw_text_mixed(d, (ox + 10, off_y + 12), off["text"][:2], cn_font=F12, en_font=F12, fill=(68, 68, 68, 255))
+                                draw_text_mixed(d, (ox + 10, off_y + 12), off["text"][:2], cn_font=F12, en_font=F12, fill=(68, 68, 68, 255), dy_en=2)
                             ox += 40 + 5
 
                     sty += sh + 12

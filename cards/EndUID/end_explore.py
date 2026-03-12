@@ -112,6 +112,15 @@ def parse_html(html: str) -> dict:
 
 
 def draw_bg(canvas: Image.Image, w: int, h: int, bg_src: str):
+    # 1. 绘制背景图叠底
+    if bg_src:
+        try:
+            bg_img = _b64_fit(bg_src, w, h).convert("RGBA")
+            bg_img.putalpha(Image.new("L", (w, h), 25)) # opacity 0.1
+            canvas.alpha_composite(bg_img)
+        except Exception: pass
+
+    # 2. 绘制径向渐变 (使用指定的 34,35,40 颜色方案)
     sw, sh = w // 10, h // 10
     cx, cy = int(sw * 0.5), int(sh * 0.2)
     grad = Image.new("RGBA", (sw, sh), (0, 0, 0, 0))
@@ -126,30 +135,26 @@ def draw_bg(canvas: Image.Image, w: int, h: int, bg_src: str):
             b = int(40 + (20 - 40) * ratio)
             grad.putpixel((x, y), (r, g, b, 255))
             
-    canvas.alpha_composite(grad.resize((w, h), Image.Resampling.LANCZOS))
-    
-    if bg_src:
-        try:
-            bg_img = _b64_fit(bg_src, w, h).convert("RGBA")
-            bg_img.putalpha(Image.new("L", (w, h), 38)) # 15% opacity
-            canvas.alpha_composite(bg_img)
-        except Exception: pass
+    grad = grad.resize((w, h), Image.Resampling.LANCZOS)
+    canvas.alpha_composite(grad)
 
+    # 3. 绘制深色网格装饰 (使用指定的 38,39,44,180 颜色方案)
     grid = Image.new("RGBA", (w, h), (0, 0, 0, 0))
     gd = ImageDraw.Draw(grid)
-    grid_c = (255, 255, 255, 8)
+    grid_c = (38, 39, 44, 180) # 修改为深色网格
     for x in range(0, w, 40): gd.line([(x, 0), (x, h)], fill=grid_c, width=1)
     for y in range(0, h, 40): gd.line([(0, y), (w, y)], fill=grid_c, width=1)
     
+    # 网格遮罩，使底部渐变消失
     mask = Image.new("L", (w, h), 255)
     md = ImageDraw.Draw(mask)
-    fade_h = int(h * 0.4)
+    fade_h = int(h * 0.2)
     for y in range(fade_h, h):
-        alpha = int(255 * (1 - min((y - fade_h) / (h * 0.6), 1.0)))
+        alpha = int(255 * (1 - min((y - fade_h) / (h * 0.8), 1.0)))
         md.line([(0, y), (w, y)], fill=alpha)
+        
     grid.putalpha(mask)
     canvas.alpha_composite(grid)
-
 
 def draw_section_title(d: ImageDraw.ImageDraw, x: int, y: int, title_cn: str, title_en: str):
     d.line([(x, y), (x, y + 24)], fill=C_ACCENT, width=4)
@@ -279,7 +284,7 @@ def render(html: str) -> bytes:
             
             # Table Boundary
             tb_h = 50 + len(dom["levels"]) * 50
-            d.rectangle([PAD, y, PAD + INNER_W, y + tb_h], outline=C_BORDER, width=1)
+            d.rectangle([PAD, y, PAD + INNER_W, y + tb_h], outline=(255, 255, 255, 38), width=1) # 增加透明度让边框清晰可见
             
             # Thead
             d.rectangle([PAD, y, PAD + INNER_W, y + 50], fill=(255, 255, 255, 15))
