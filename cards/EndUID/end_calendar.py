@@ -1,19 +1,20 @@
-# 明日方舟：终末地 探索进度卡片渲染器 (PIL 版)
+# 明日方舟：终末地 活动日历卡片渲染器 (PIL 版)
 
 from __future__ import annotations
 
 import math
+import re
 from io import BytesIO
 
 from bs4 import BeautifulSoup
-from PIL import Image, ImageDraw, ImageChops
+from PIL import Image, ImageDraw, ImageFilter, ImageChops
 
 # 引入工具函数并生成字体
 from . import (
-    F12, F14, F16, F18, F20, F24, F48,
-    M12, M14, M16, M18,
-    O16, O18,
-    get_font, draw_text_mixed, _b64_img, _b64_fit
+    get_font, draw_text_mixed, _b64_img, _b64_fit, _round_mask,
+    F12, F14, F16, F18, F20, F24, F36,
+    M12, M14, M16, M24,
+    O14, O16
 )
 
 # 画布基础属性
@@ -26,87 +27,106 @@ C_BG = (15, 16, 20, 255)
 C_ACCENT = (255, 230, 0, 255)
 C_TEXT = (255, 255, 255, 255)
 C_SUBTEXT = (139, 139, 139, 255)
-C_BORDER = (255, 255, 255, 25)  # rgba(255,255,255,0.1)
-C_PANEL = (255, 255, 255, 8)    # rgba(255,255,255,0.03)
+C_BORDER = (255, 255, 255, 25)
 
-C_GREEN = (74, 222, 128, 255)
-C_GRAY_TEXT = (85, 85, 85, 255)
+def parse_color(c_str: str, default=(255, 230, 0, 255)) -> tuple:
+    c_str = c_str.strip().lower()
+    if c_str.startswith("#"):
+        c_str = c_str.lstrip("#")
+        if len(c_str) == 3: c_str = "".join(c+c for c in c_str)
+        if len(c_str) == 6:
+            return (int(c_str[0:2], 16), int(c_str[2:4], 16), int(c_str[4:6], 16), 255)
+        elif len(c_str) == 8:
+            return (int(c_str[0:2], 16), int(c_str[2:4], 16), int(c_str[4:6], 16), int(c_str[6:8], 16))
+    return default
 
+def _parse_progress_style(style_str: str) -> tuple[float, tuple]:
+    prog = 0.0
+    color = C_ACCENT
+    if not style_str: return prog, color
+    pm = re.search(r"width:\s*([\d\.]+)%", style_str)
+    if pm: prog = float(pm.group(1))
+    cm = re.search(r"background:\s*([^;]+)", style_str)
+    if cm: color = parse_color(cm.group(1), default=color)
+    return prog, color
 
 def parse_html(html: str) -> dict:
     soup = BeautifulSoup(html, "lxml")
     data = {
-        "bg": "", "end_logo": "", "avatar": "",
-        "name": "未知用户", "uid": "", "level": "0", "world_level": "0", "create_time": "N/A",
-        "domains": []
+        "bg": "", "end_logo": "", "now": "", "banner": "",
+        "charPools": [], "weaponPools": [], "activities": []
     }
 
-    # 背景与 Logo
     bg_el = soup.select_one(".bg-layer img")
     if bg_el: data["bg"] = bg_el.get("src", "")
     logo_el = soup.select_one(".footer-logo")
     if logo_el: data["end_logo"] = logo_el.get("src", "")
         
-    av_el = soup.select_one(".avatar img")
-    if av_el: data["avatar"] = av_el.get("src", "")
+    now_el = soup.select_one(".calendar-date")
+    if now_el: data["now"] = now_el.get_text(strip=True)
         
-    name_el = soup.select_one(".user-name")
-    if name_el: data["name"] = name_el.get_text(strip=True)
-    uid_el = soup.select_one(".user-uid")
-    if uid_el: data["uid"] = uid_el.get_text(strip=True).replace("UID", "").strip()
+    banner_el = soup.select_one(".banner-wrap img")
+    if banner_el: data["banner"] = banner_el.get("src", "")
 
-    tags = soup.select(".info-tags .tag")
-    if len(tags) >= 3:
-        data["level"] = tags[0].select_one("strong").get_text(strip=True) if tags[0].select_one("strong") else "0"
-        data["world_level"] = tags[1].select_one("strong").get_text(strip=True) if tags[1].select_one("strong") else "0"
-        data["create_time"] = tags[2].select_one("strong").get_text(strip=True) if tags[2].select_one("strong") else "N/A"
+    for sec in soup.select(".container > div"):
+        stitle_el = sec.select_one(".section-title")
+        if not stitle_el: continue
+        stitle = stitle_el.get_text(strip=True)
 
-    # 解析探索区域
-    for dom_el in soup.select(".domain-section"):
-        dt_el = dom_el.select_one(".domain-title")
-        if not dt_el: continue
-            
-        lvl_str = "0"
-        tag_el = dt_el.select_one(".tag strong")
-        if tag_el:
-            lvl_str = tag_el.get_text(strip=True)
-            clone = BeautifulSoup(str(dt_el), "lxml").select_one(".domain-title")
-            clone.select_one(".tag").decompose()
-            name_str = clone.get_text(strip=True)
-        else:
-            name_str = dt_el.get_text(strip=True)
+        if "干员寻访" in stitle:
+            for card in sec.select(".pool-card"):
+                pool = {"chars": [], "name": "", "time": "", "status": "", "remaining": "", "progress": 0.0, "color": C_ACCENT}
+                for ch in card.select(".pool-char"):
+                    classes = ch.get("class", [])
+                    rarity = 5
+                    if "rarity_6" in classes: rarity = 6
+                    pic = ch.select_one("img").get("src", "") if ch.select_one("img") else ""
+                    is_up = ch.select_one(".pool-char-badge") is not None
+                    pool["chars"].append({"rarity": rarity, "pic": pic, "is_up": is_up})
+                pool["name"] = card.select_one(".pool-name").get_text(strip=True) if card.select_one(".pool-name") else ""
+                pool["time"] = card.select_one(".pool-time").get_text(strip=True) if card.select_one(".pool-time") else ""
+                sb = card.select_one(".status-badge")
+                if sb: pool["status"] = sb.get_text(strip=True)
+                rem = card.select_one(".remaining-text")
+                if rem: pool["remaining"] = rem.get_text(strip=True)
+                pb = card.select_one(".progress-bar-fill")
+                if pb:
+                    p_val, p_col = _parse_progress_style(pb.get("style", ""))
+                    pool["progress"], pool["color"] = p_val, p_col
+                data["charPools"].append(pool)
 
-        levels = []
-        for tr in dom_el.select("tbody tr"):
-            tds = tr.select("td")
-            if len(tds) < 5: continue
-            
-            def ext_cnt(td):
-                counts = []
-                for sp in td.select(".cell-count"):
-                    c = int(sp.select_one(".cur").get_text(strip=True)) if sp.select_one(".cur") else 0
-                    m = int(sp.select_one(".max").get_text(strip=True)) if sp.select_one(".max") else 0
-                    counts.append((c, m))
-                return counts
+        elif "武器寻访" in stitle:
+            for card in sec.select(".pool-card"):
+                pool = {"name": "", "time": "", "status": "", "remaining": "", "progress": 0.0, "color": C_ACCENT}
+                pool["name"] = card.select_one(".pool-name").get_text(strip=True) if card.select_one(".pool-name") else ""
+                pool["time"] = card.select_one(".pool-time").get_text(strip=True) if card.select_one(".pool-time") else ""
+                sb = card.select_one(".status-badge")
+                if sb: pool["status"] = sb.get_text(strip=True)
+                rem = card.select_one(".remaining-text")
+                if rem: pool["remaining"] = rem.get_text(strip=True)
+                pb = card.select_one(".progress-bar-fill")
+                if pb:
+                    p_val, p_col = _parse_progress_style(pb.get("style", ""))
+                    pool["progress"], pool["color"] = p_val, p_col
+                data["weaponPools"].append(pool)
 
-            c1 = ext_cnt(tds[1])[0] if ext_cnt(tds[1]) else (0,0)
-            c2 = ext_cnt(tds[2])[0] if ext_cnt(tds[2]) else (0,0)
-            c3 = ext_cnt(tds[3])[0] if ext_cnt(tds[3]) else (0,0)
-            
-            c4_arr = ext_cnt(tds[4])
-            c4_1 = c4_arr[0] if len(c4_arr) > 0 else (0,0)
-            c4_2 = c4_arr[1] if len(c4_arr) > 1 else (0,0)
-
-            levels.append({
-                "name": tds[0].get_text(strip=True),
-                "trchest": c1,
-                "puzzle": c2,
-                "blackbox": c3,
-                "equip": c4_1,
-                "piece": c4_2
-            })
-            
-        data["domains"].append({"name": name_str, "level": lvl_str, "levels": levels})
+        elif "活动日历" in stitle:
+            for card in sec.select(".activity-card"):
+                act = {"pic": "", "name": "", "desc": "", "time": "", "status": "", "remaining": "", "progress": 0.0, "color": C_ACCENT}
+                pic_el = card.select_one(".activity-pic img")
+                if pic_el: act["pic"] = pic_el.get("src", "")
+                act["name"] = card.select_one(".activity-name").get_text(strip=True) if card.select_one(".activity-name") else ""
+                act["desc"] = card.select_one(".activity-desc").get_text(strip=True) if card.select_one(".activity-desc") else ""
+                act["time"] = card.select_one(".activity-time").get_text(strip=True) if card.select_one(".activity-time") else ""
+                sb = card.select_one(".status-badge")
+                if sb: act["status"] = sb.get_text(strip=True)
+                rem = card.select_one(".remaining-text")
+                if rem: act["remaining"] = rem.get_text(strip=True)
+                pb = card.select_one(".progress-bar-fill")
+                if pb:
+                    p_val, p_col = _parse_progress_style(pb.get("style", ""))
+                    act["progress"], act["color"] = p_val, p_col
+                data["activities"].append(act)
 
     return data
 
@@ -131,21 +151,21 @@ def draw_bg(canvas: Image.Image, w: int, h: int, bg_src: str):
     if bg_src:
         try:
             bg_img = _b64_fit(bg_src, w, h).convert("RGBA")
-            bg_img.putalpha(Image.new("L", (w, h), 38)) # 15% opacity
+            bg_img.putalpha(Image.new("L", (w, h), 25)) 
             canvas.alpha_composite(bg_img)
         except Exception: pass
 
     grid = Image.new("RGBA", (w, h), (0, 0, 0, 0))
     gd = ImageDraw.Draw(grid)
-    grid_c = (255, 255, 255, 8)
+    grid_c = (38, 39, 44, 180)
     for x in range(0, w, 40): gd.line([(x, 0), (x, h)], fill=grid_c, width=1)
     for y in range(0, h, 40): gd.line([(0, y), (w, y)], fill=grid_c, width=1)
     
     mask = Image.new("L", (w, h), 255)
     md = ImageDraw.Draw(mask)
-    fade_h = int(h * 0.4)
+    fade_h = int(h * 0.2)
     for y in range(fade_h, h):
-        alpha = int(255 * (1 - min((y - fade_h) / (h * 0.6), 1.0)))
+        alpha = int(255 * (1 - min((y - fade_h) / (h * 0.8), 1.0)))
         md.line([(0, y), (w, y)], fill=alpha)
     grid.putalpha(mask)
     canvas.alpha_composite(grid)
@@ -153,34 +173,42 @@ def draw_bg(canvas: Image.Image, w: int, h: int, bg_src: str):
 
 def draw_section_title(d: ImageDraw.ImageDraw, x: int, y: int, title_cn: str, title_en: str):
     d.line([(x, y), (x, y + 24)], fill=C_ACCENT, width=4)
-    draw_text_mixed(d, (x + 12, y), title_cn, cn_font=F24, en_font=F24, fill=C_TEXT, dy_en=5)
+    # [上提 10%] dy_en 从 4 改为 2
+    draw_text_mixed(d, (x + 12, y - 2), title_cn, cn_font=F24, en_font=F24, fill=C_TEXT, dy_en=2)
     cn_w = int(F24.getlength(title_cn))
-    draw_text_mixed(d, (x + 12 + cn_w + 10, y + 8), title_en, cn_font=F14, en_font=M14, fill=C_SUBTEXT, dy_en=3)
-    return 36
+    # [上提 10%] dy_en 从 2 改为 0
+    draw_text_mixed(d, (x + 12 + cn_w + 10, y + 6 - 2), title_en, cn_font=F16, en_font=M16, fill=(170, 170, 170, 255), dy_en=0)
+    return 38
 
 
-def get_count_w(cur: int, mx: int) -> int:
-    """计算单组 进度文本 占用的宽度"""
-    return int(M18.getlength(str(cur))) + int(M18.getlength("/")) + int(M18.getlength(str(mx))) + 8
-
-def draw_cell_count(d: ImageDraw.ImageDraw, x: int, y: int, cur: int, mx: int):
-    """绘制单组进度 (居中起始 x)"""
-    if mx == 0:
-        c_col = m_col = C_GRAY_TEXT
-    elif cur >= mx:
-        c_col = C_GREEN
-        m_col = (136, 136, 136, 255)
+def draw_status_row(d: ImageDraw.ImageDraw, x: int, y: int, status: str, remaining: str, progress: float, p_color: tuple, max_w: int):
+    if status == '进行中':
+        bg_c, bd_c, txt_c = (255, 230, 0, 38), (255, 230, 0, 76), C_ACCENT
+    elif status == '已结束':
+        bg_c, bd_c, txt_c = (255, 255, 255, 12), (255, 255, 255, 20), (102, 102, 102, 255)
     else:
-        c_col = C_ACCENT
-        m_col = (136, 136, 136, 255)
-        
-    c_s, m_s = str(cur), str(mx)
-    cw = int(M18.getlength(c_s))
-    sw = int(M18.getlength("/"))
-    
-    draw_text_mixed(d, (x, y), c_s, cn_font=M18, en_font=M18, fill=c_col, dy_en=4)
-    draw_text_mixed(d, (x + cw + 4, y), "/", cn_font=M18, en_font=M18, fill=(102,102,102,255), dy_en=4)
-    draw_text_mixed(d, (x + cw + 4 + sw + 4, y), m_s, cn_font=M18, en_font=M18, fill=m_col, dy_en=4)
+        bg_c, bd_c, txt_c = (74, 158, 255, 38), (74, 158, 255, 76), (74, 158, 255, 255)
+
+    st_w = int(F14.getlength(status)) + 24
+    d.rounded_rectangle([x, y, x + st_w, y + 22], radius=3, fill=bg_c, outline=bd_c, width=1)
+    # [上提 10%] dy_en 从 2 改为 0
+    draw_text_mixed(d, (x + 12, y + 2 - 1), status, cn_font=F14, en_font=M14, fill=txt_c, dy_en=0)
+
+    curr_x = x + st_w + 10
+
+    if remaining:
+        rem_w = int(M14.getlength(remaining))
+        # [上提 10%] 剩余时间倒计时对齐，dy_en 从 2 改为 0
+        draw_text_mixed(d, (curr_x, y + 3 - 1), remaining, cn_font=F14, en_font=M14, fill=(221, 221, 221, 255), dy_en=0)
+        curr_x += rem_w + 10
+
+    bar_w = max_w - (curr_x - x)
+    if bar_w > 20:
+        bar_y = y + 6
+        d.rounded_rectangle([curr_x, bar_y, curr_x + bar_w, bar_y + 10], radius=4, fill=(26, 26, 26, 255), outline=C_BORDER, width=1)
+        fill_w = int(bar_w * progress / 100)
+        if fill_w > 0:
+            d.rounded_rectangle([curr_x, bar_y, curr_x + fill_w, bar_y + 10], radius=4, fill=p_color)
 
 
 def render(html: str) -> bytes:
@@ -189,25 +217,30 @@ def render(html: str) -> bytes:
     # ---------------- 1. 高度预计算 ----------------
     cur_y = PAD
     
-    # Header Area
-    cur_y += 100 + 25 + 30
+    cur_y += 36 + 20 + 25 
     
-    # Section Title
-    cur_y += 24 + 15
-    
-    # Domains
-    if not data["domains"]:
-        cur_y += 90 # 暂无探索数据
-    else:
-        for dom in data["domains"]:
-            cur_y += 36 # domain title
-            cur_y += 50 # thead
-            cur_y += len(dom["levels"]) * 50 # tbody tr
-            cur_y += 10 # domain-section margin-bottom
-            
-    # Footer
-    cur_y += 50
-    total_h = max(cur_y, 800)
+    if data["banner"]:
+        cur_y += 280 + 25
+        
+    if data["charPools"]:
+        cur_y += 38
+        for pool in data["charPools"]:
+            cur_y += 132 + 14
+        cur_y += 25 - 14
+        
+    if data["weaponPools"]:
+        cur_y += 38
+        for pool in data["weaponPools"]:
+            cur_y += 114 + 14
+        cur_y += 25 - 14
+        
+    if data["activities"]:
+        cur_y += 38
+        rows = math.ceil(len(data["activities"]) / 2)
+        cur_y += rows * 140 + max(0, rows - 1) * 14
+        cur_y += 25
+        
+    total_h = max(cur_y + 50, 600)
     
     # ---------------- 2. 实际绘制 ----------------
     canvas = Image.new("RGBA", (W, total_h), C_BG)
@@ -217,113 +250,139 @@ def render(html: str) -> bytes:
     y = PAD
     
     # === Header ===
-    d.rectangle([PAD, y, PAD + 100, y + 100], fill=(17, 17, 17, 255), outline=C_ACCENT, width=1)
-    if data["avatar"]:
-        try:
-            # 修改头像贴图：增加一个矩形的裁剪而不是圆形以匹配模板
-            av_img = _b64_fit(data["avatar"], 100, 100)
-            canvas.paste(av_img, (PAD, y))
-        except Exception: pass
-        
-    ux = PAD + 100 + 25
-    draw_text_mixed(d, (ux, y + 5), data["name"], cn_font=F48, en_font=F48, fill=C_TEXT, dy_en=10)
-    name_w = int(F48.getlength(data["name"]))
+    # [上提 10%]
+    draw_text_mixed(d, (PAD, y - 4), "活动日历", cn_font=F36, en_font=F36, fill=C_TEXT, dy_en=2)
+    draw_text_mixed(d, (PAD + 160, y + 16 - 2), "CALENDAR", cn_font=F16, en_font=M16, fill=C_SUBTEXT, dy_en=0)
     
-    if data["uid"]:
-        uid_x = ux + name_w + 15
-        uid_text = f"UID {data['uid']}"
-        uid_w = int(M16.getlength(uid_text))
-        d.rounded_rectangle([uid_x, y + 25, uid_x + uid_w + 16, y + 25 + 24], radius=4, fill=(255, 255, 255, 12))
-        draw_text_mixed(d, (uid_x + 8, y + 28), uid_text, cn_font=M16, en_font=M16, fill=C_SUBTEXT, dy_en=3)
-        
-    tag_y = y + 65
-    tx = ux
-    def draw_tag(x, y, label, val, is_cn=False):
-        lbl_f = F16 if is_cn else O16
-        lbl_w = int(lbl_f.getlength(label))
-        val_w = int(O18.getlength(val))
-        tw = lbl_w + val_w + 5 + 24
-        d.rectangle([x, y, x + tw, y + 28], fill=C_PANEL, outline=C_BORDER, width=1)
-        draw_text_mixed(d, (x + 12, y + 4), label, cn_font=lbl_f, en_font=lbl_f, fill=(204, 204, 204, 255), dy_en=3)
-        draw_text_mixed(d, (x + 12 + lbl_w + 5, y + 3), val, cn_font=O18, en_font=O18, fill=C_ACCENT, dy_en=3)
-        return tw + 15
-        
-    tx += draw_tag(tx, tag_y, "LEVEL", data["level"])
-    tx += draw_tag(tx, tag_y, "WORLD", data["world_level"])
-    tx += draw_tag(tx, tag_y, "苏醒日", data["create_time"], is_cn=True)
+    date_w = int(M14.getlength(data["now"]))
+    dx = W - PAD - date_w - 24
+    d.rounded_rectangle([dx, y + 10, dx + date_w + 24, y + 32], radius=4, fill=(255, 255, 255, 12))
+    # [上提 10%] 日期数字上提
+    draw_text_mixed(d, (dx + 12, y + 13 - 1), data["now"], cn_font=F14, en_font=M14, fill=C_SUBTEXT, dy_en=0)
     
-    y += 100 + 25
+    y += 36 + 20
     d.line([(PAD, y), (W - PAD, y)], fill=C_BORDER, width=1)
-    y += 30
+    y += 25
     
-    # === Exploration ===
-    draw_section_title(d, PAD, y, "区域探索", "EXPLORATION")
-    y += 24 + 15
-    
-    if not data["domains"]:
-        d.rectangle([PAD, y, PAD + INNER_W, y + 90], outline=C_BORDER, width=1)
-        draw_text_mixed(d, (W//2 - 40, y + 35), "暂无探索数据", cn_font=F16, en_font=F16, fill=(102, 102, 102, 255), dy_en=3)
-        y += 90
-    else:
-        # 表格列宽设定 (22%, 19.5% x4) => 202px, 179px, 179px, 179px, 181px
-        cw = [202, 179, 179, 179, 181]
-        cx = [PAD, PAD+202, PAD+381, PAD+560, PAD+739]
+    # === Banner ===
+    if data["banner"]:
+        try:
+            ban_img = _b64_fit(data["banner"], INNER_W, 280)
+            canvas.paste(ban_img, (PAD, y), _round_mask(INNER_W, 280, 4))
+            d.rounded_rectangle([PAD, y, PAD + INNER_W, y + 280], radius=4, outline=C_BORDER, width=1)
+        except Exception: pass
+        y += 280 + 25
         
-        for dom in data["domains"]:
-            # Domain Title
-            draw_text_mixed(d, (PAD, y + 5), dom["name"], cn_font=F24, en_font=F24, fill=C_TEXT, dy_en=5)
-            nm_w = int(F24.getlength(dom["name"]))
+    # === Char Pools ===
+    if data["charPools"]:
+        y += draw_section_title(d, PAD, y, "干员寻访", "RECRUITMENT")
+        
+        for pool in data["charPools"]:
+            d.rectangle([PAD, y, PAD + INNER_W, y + 132], fill=(0, 0, 0, 76), outline=C_BORDER, width=1)
             
-            d.rectangle([PAD + nm_w + 10, y + 5, PAD + nm_w + 10 + 45, y + 30], fill=C_PANEL, outline=C_BORDER, width=1)
-            draw_text_mixed(d, (PAD + nm_w + 16, y + 8), f"Lv.{dom['level']}", cn_font=F14, en_font=O16, fill=C_TEXT, dy_en=3)
-            y += 36
-            
-            # Table Boundary
-            tb_h = 50 + len(dom["levels"]) * 50
-            d.rectangle([PAD, y, PAD + INNER_W, y + tb_h], outline=C_BORDER, width=1)
-            
-            # Thead
-            d.rectangle([PAD, y, PAD + INNER_W, y + 50], fill=(255, 255, 255, 15))
-            d.line([(PAD, y + 50), (PAD + INNER_W, y + 50)], fill=C_BORDER, width=1)
-            
-            headers = ["区域", "宝箱", "醚质", "协议", "装备 / 档案"]
-            draw_text_mixed(d, (cx[0] + 20, y + 15), headers[0], cn_font=F18, en_font=F18, fill=(170, 170, 170, 255), dy_en=4)
-            for i in range(1, 5):
-                hw = int(F18.getlength(headers[i]))
-                draw_text_mixed(d, (cx[i] + cw[i]//2 - hw//2, y + 15), headers[i], cn_font=F18, en_font=F18, fill=(170, 170, 170, 255), dy_en=4)
-            y += 50
-            
-            # Tbody
-            for r_idx, lv in enumerate(dom["levels"]):
-                if r_idx % 2 != 0: # zebra: even child (index 1,3,5...)
-                    d.rectangle([PAD, y, PAD + INNER_W, y + 50], fill=(255, 255, 255, 4))
-                d.line([(PAD, y + 50), (PAD + INNER_W, y + 50)], fill=(255, 255, 255, 10), width=1)
+            # Chars
+            cx = PAD + 20
+            cy = y + 16
+            for ch in pool["chars"]:
+                rc_color = (255, 157, 58, 255) if ch["rarity"] == 6 else (192, 132, 252, 255)
                 
-                # Col 0 (Left align)
-                draw_text_mixed(d, (cx[0] + 20, y + 14), lv["name"], cn_font=F20, en_font=F20, fill=(221, 221, 221, 255), dy_en=4)
-                
-                # Col 1-3 (Center)
-                sets = [lv["trchest"], lv["puzzle"], lv["blackbox"]]
-                for c_i in range(3):
-                    cur, mx = sets[c_i]
-                    tw = get_count_w(cur, mx)
-                    draw_cell_count(d, cx[c_i+1] + cw[c_i+1]//2 - tw//2, y + 14, cur, mx)
+                d.rounded_rectangle([cx, cy, cx + 100, cy + 100], radius=6, fill=(255, 255, 255, 12), outline=rc_color, width=2)
+                if ch["pic"]:
+                    try:
+                        pic = _b64_fit(ch["pic"], 96, 96)
+                        canvas.paste(pic, (cx + 2, cy + 2), _round_mask(96, 96, 4))
+                    except Exception: pass
                     
-                # Col 4 (Dual center)
-                c4_1, c4_2 = lv["equip"], lv["piece"]
-                w_1 = get_count_w(c4_1[0], c4_1[1])
-                w_2 = get_count_w(c4_2[0], c4_2[1])
-                w_sep = int(M18.getlength(" | "))
-                tot_w = w_1 + w_sep + w_2
+                if ch["is_up"]:
+                    d.rectangle([cx + 2, cy + 100 - 20, cx + 98, cy + 98], fill=(0, 0, 0, 178))
+                    # [上提 10%] UP标签
+                    draw_text_mixed(d, (cx + 50 - int(M12.getlength("UP"))//2, cy + 100 - 18 - 1), "UP", cn_font=M12, en_font=M12, fill=C_ACCENT, dy_en=0)
+                    
+                cx += 110
                 
-                st_x = cx[4] + cw[4]//2 - tot_w//2
-                draw_cell_count(d, st_x, y + 14, c4_1[0], c4_1[1])
-                draw_text_mixed(d, (st_x + w_1, y + 14), " | ", cn_font=M18, en_font=M18, fill=(85, 85, 85, 255), dy_en=4)
-                draw_cell_count(d, st_x + w_1 + w_sep, y + 14, c4_2[0], c4_2[1])
-                
-                y += 50
-            y += 10 # domain gap
+            # Info
+            ix = cx + 6
+            iy = y + 16
+            # [上提 10%]
+            draw_text_mixed(d, (ix, iy - 2), pool["name"], cn_font=F24, en_font=F24, fill=C_TEXT, dy_en=1)
+            draw_text_mixed(d, (ix, iy + 34 - 2), pool["time"], cn_font=F16, en_font=M16, fill=(204, 204, 204, 255), dy_en=0)
             
+            max_w = PAD + INNER_W - 20 - ix
+            draw_status_row(d, ix, iy + 64, pool["status"], pool["remaining"], pool["progress"], pool["color"], max_w)
+            
+            y += 132 + 14
+        y += 25 - 14
+
+    # === Weapon Pools ===
+    if data["weaponPools"]:
+        y += draw_section_title(d, PAD, y, "武器寻访", "WEAPON POOL")
+        
+        for pool in data["weaponPools"]:
+            d.rectangle([PAD, y, PAD + INNER_W, y + 114], fill=(0, 0, 0, 76), outline=C_BORDER, width=1)
+            
+            ix = PAD + 20
+            iy = y + 16
+            # [上提 10%]
+            draw_text_mixed(d, (ix, iy - 2), pool["name"], cn_font=F24, en_font=F24, fill=C_TEXT, dy_en=1)
+            draw_text_mixed(d, (ix, iy + 34 - 2), pool["time"], cn_font=F16, en_font=M16, fill=(204, 204, 204, 255), dy_en=0)
+            
+            max_w = INNER_W - 40
+            draw_status_row(d, ix, iy + 64, pool["status"], pool["remaining"], pool["progress"], pool["color"], max_w)
+            
+            y += 114 + 14
+        y += 25 - 14
+        
+    # === Activities ===
+    if data["activities"]:
+        y += draw_section_title(d, PAD, y, "活动日历", "EVENTS")
+        
+        cols = 2
+        gap = 14
+        cw = (INNER_W - gap) // cols # 453px
+        
+        for i, act in enumerate(data["activities"]):
+            row, col = i // cols, i % cols
+            ax = PAD + col * (cw + gap)
+            ay = y + row * (140 + gap)
+            
+            d.rectangle([ax, ay, ax + cw, ay + 140], fill=(0, 0, 0, 76), outline=C_BORDER, width=1)
+            
+            if act["pic"]:
+                try:
+                    pic = _b64_fit(act["pic"], 160, 140)
+                    canvas.paste(pic, (ax, ay))
+                except Exception: pass
+                
+            bx = ax + 160
+            by = ay
+            bw = cw - 160
+            
+            # Name Truncate
+            name_str = act["name"]
+            if int(F18.getlength(name_str)) > bw - 28:
+                while name_str and int(F18.getlength(name_str + "...")) > bw - 28:
+                    name_str = name_str[:-1]
+                name_str += "..."
+            # [上提 10%]
+            draw_text_mixed(d, (bx + 14, by + 12 - 2), name_str, cn_font=F18, en_font=F18, fill=C_TEXT, dy_en=0)
+            
+            # Desc Truncate
+            desc_str = act["desc"]
+            if int(F14.getlength(desc_str)) > bw - 28:
+                while desc_str and int(F14.getlength(desc_str + "...")) > bw - 28:
+                    desc_str = desc_str[:-1]
+                desc_str += "..."
+            # [上提 10%]
+            draw_text_mixed(d, (bx + 14, by + 40 - 1), desc_str, cn_font=F14, en_font=F14, fill=(187, 187, 187, 255), dy_en=0)
+            
+            # [上提 10%] 时间数字
+            draw_text_mixed(d, (bx + 14, by + 82 - 1), act["time"], cn_font=F12, en_font=M12, fill=(153, 153, 153, 255), dy_en=0)
+            
+            draw_status_row(d, bx + 14, by + 104, act["status"], act["remaining"], act["progress"], act["color"], bw - 28)
+            
+        rows = math.ceil(len(data["activities"]) / 2)
+        y += rows * 140 + max(0, rows - 1) * gap + 25
+
     # === Footer Logo ===
     if data["end_logo"]:
         try:
