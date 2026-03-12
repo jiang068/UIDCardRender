@@ -186,36 +186,62 @@ def _wrap_paragraphs(text: str, font: ImageFont.FreeTypeFont, max_w: int) -> lis
 # 各组件绘制函数
 
 def draw_header(data: dict) -> Image.Image:
-    # 高度自适应
-    header_h = 130 if data["is_list"] else 150
+    y_offset = 30
+    
+    # 预计算 Logo 占位宽度
+    if data["logo_src"]:
+        x_offset = 30 + 180 + 20
+    else:
+        x_offset = 30
+        
+    # 对详情模式的标题进行文本换行计算
+    title_lines = []
+    if not data["is_list"] and data["title"]:
+        title_lines = _wrap_paragraphs(data["title"], F28B, W - x_offset - 30)
+        
+    # 动态计算 Header 区域总高度
+    if data["is_list"]:
+        header_h = 130
+    else:
+        # 基础行高40，如果多行则撑开，单行则保持原有的 150 最小高度
+        title_h = len(title_lines) * 40
+        header_h = max(150, y_offset + title_h + 40)
+        
     img = Image.new("RGBA", (W, header_h), C_HEADER_BG)
     d = ImageDraw.Draw(img)
     
     # 底部蓝边
     d.rectangle([0, header_h - 3, W, header_h], fill=(52, 152, 219, 255))
     
-    y_offset = 30
-    # Row 1: Logo & Title
+    # Row 1: Logo
     if data["logo_src"]:
         try:
             logo = _b64_fit(data["logo_src"], 180, 60)
             img.paste(logo, (30, y_offset), logo)
-            x_offset = 30 + 180 + 20
         except Exception:
-            x_offset = 30
-    else:
-        x_offset = 30
+            pass
 
-    if not data["is_list"] and data["title"]:
-        draw_text_mixed(d, (x_offset, y_offset + _ty(F28B, data["title"], 60)), data["title"], cn_font=F28B, en_font=M28, fill=(255, 255, 255, 255))
+    # 绘制标题 (支持多行排版)
+    if not data["is_list"] and title_lines:
+        ty = y_offset
+        if len(title_lines) == 1:
+            # 单行时与 Logo(高度60) 垂直居中
+            ty += _ty(F28B, title_lines[0], 60)
+        else:
+            # 多行时顶部对齐，稍微下沉5px与Logo视觉对齐
+            ty += 5
+            
+        for line in title_lines:
+            draw_text_mixed(d, (x_offset, ty), line, cn_font=F28B, en_font=M28, fill=(255, 255, 255, 255))
+            ty += 40
 
     y_offset += 60 + 12
 
-    # Row 2: Subtitle
+    # Row 2: Subtitle (仅列表模式才有)
     if data["is_list"] and data["subtitle"]:
         stw = int(F14.getlength(data["subtitle"]))
         _draw_rounded_rect(img, 30, y_offset, 30 + stw + 24, y_offset + 26, 4, (255, 255, 255, 25))
-    draw_text_mixed(d, (30 + 12, y_offset + _ty(F14, data["subtitle"], 26)), data["subtitle"], cn_font=F14, en_font=M14, fill=(255, 255, 255, 178))
+        draw_text_mixed(d, (30 + 12, y_offset + _ty(F14, data["subtitle"], 26)), data["subtitle"], cn_font=F14, en_font=M14, fill=(255, 255, 255, 178))
 
     return img
 
