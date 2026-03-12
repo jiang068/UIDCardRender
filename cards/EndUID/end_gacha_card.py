@@ -13,7 +13,7 @@ from . import (
     get_font, draw_text_mixed, _b64_img, _b64_fit,
     F12, F14, F16, F26, F48,
     M10, M12, M14, M16,
-    O36, O38
+    O16, O36, O38
 )
 
 # 画布基础属性
