@@ -163,11 +163,13 @@ def render_list_mode(data: dict) -> bytes:
     # 标题头
     hy = PAD
     d.polygon([(PAD, hy), (PAD + 8, hy), (PAD + 4, hy + 42), (PAD - 4, hy + 42)], fill=C_ACCENT)
-    draw_text_mixed(d, (PAD + 20, hy - 4), data["title"], cn_font=F42, en_font=F42, fill=C_TEXT)
+    # [修改] 英文下沉 8px (42 * 20%)
+    draw_text_mixed(d, (PAD + 20, hy - 4), data["title"], cn_font=F42, en_font=F42, fill=C_TEXT, dy_en=8)
     
     if data["subtitle"]:
         sub_w = int(M16.getlength(data["subtitle"]))
-        draw_text_mixed(d, (W - PAD - sub_w, hy + 18), data["subtitle"], cn_font=F16, en_font=M16, fill=C_SUBTEXT)
+        # [修改] 英文下沉 3px
+        draw_text_mixed(d, (W - PAD - sub_w, hy + 18), data["subtitle"], cn_font=F16, en_font=M16, fill=C_SUBTEXT, dy_en=3)
     
     line_y = hy + 42 + 20
     d.line([(PAD, line_y), (W - PAD, line_y)], fill=(255, 255, 255, 25), width=2)
@@ -198,7 +200,8 @@ def render_list_mode(data: dict) -> bytes:
         id_text = f"#{item['short_id']}"
         id_w = int(M15.getlength(id_text)) + 20
         d.rounded_rectangle([cx + 8, cy + 8, cx + 8 + id_w, cy + 8 + 24], radius=4, fill=(0, 0, 0, 178))
-        draw_text_mixed(d, (cx + 18, cy + 9), id_text, cn_font=M15, en_font=M15, fill=C_ACCENT, dy_en=-2)
+        # [修改] 从 -2 修正为 +3
+        draw_text_mixed(d, (cx + 18, cy + 9), id_text, cn_font=M15, en_font=M15, fill=C_ACCENT, dy_en=3)
         
         # 内部标题
         by = cy + cover_h + 14
@@ -210,7 +213,8 @@ def render_list_mode(data: dict) -> bytes:
             title_lines[1] = title_lines[1][:-1] + "..."
             
         for ti, tline in enumerate(title_lines):
-            draw_text_mixed(d, (bx, by + ti * 28 - 2), tline, cn_font=F20, en_font=F20, fill=C_TEXT)
+            # [修改] 英文下沉 4px
+            draw_text_mixed(d, (bx, by + ti * 28 - 2), tline, cn_font=F20, en_font=F20, fill=C_TEXT, dy_en=4)
             
         # 底部信息 Meta
         my = cy + card_h - 46
@@ -226,10 +230,12 @@ def render_list_mode(data: dict) -> bytes:
         else:
             d.ellipse([bx, my, bx + 32, my + 32], fill=(51, 51, 51, 255))
             
-        draw_text_mixed(d, (bx + 40, my + 5), item["user"], cn_font=F16, en_font=M16, fill=C_SUBTEXT)
+        # [修改] 英文下沉 3px
+        draw_text_mixed(d, (bx + 40, my + 5), item["user"], cn_font=F16, en_font=M16, fill=C_SUBTEXT, dy_en=3)
         
         date_w = int(M16.getlength(item["date"]))
-        draw_text_mixed(d, (cx + card_w - 14 - date_w, my + 5), item["date"], cn_font=M16, en_font=M16, fill=C_SUBTEXT)
+        # [修改] 中文垫底替换为 F16，英文下沉 3px
+        draw_text_mixed(d, (cx + card_w - 14 - date_w, my + 5), item["date"], cn_font=F16, en_font=M16, fill=C_SUBTEXT, dy_en=3)
 
     out_rgb = Image.new("RGB", canvas.size, C_BG[:3])
     out_rgb.paste(canvas, mask=canvas.split()[3])
@@ -288,11 +294,14 @@ def render_detail_mode(data: dict) -> bytes:
     else:
         d.ellipse([ax, ay, ax + 70, ay + 70], fill=(51, 51, 51, 255))
         
-    draw_text_mixed(d, (ax + 90, ay - 2), data["title"], cn_font=F36, en_font=F36, fill=C_TEXT)
-    draw_text_mixed(d, (ax + 90, ay + 44), data["user"], cn_font=F18, en_font=M18, fill=C_SUBTEXT)
+    # [修改] 英文下沉 7px
+    draw_text_mixed(d, (ax + 90, ay - 2), data["title"], cn_font=F36, en_font=F36, fill=C_TEXT, dy_en=7)
+    # [修改] 英文下沉 4px
+    draw_text_mixed(d, (ax + 90, ay + 44), data["user"], cn_font=F18, en_font=M18, fill=C_SUBTEXT, dy_en=4)
     
     user_w = int(F18.getlength(data["user"])) if not data["user"].isascii() else int(M18.getlength(data["user"]))
-    draw_text_mixed(d, (ax + 90 + user_w + 15, ay + 44), data["time"], cn_font=M18, en_font=M18, fill=C_SUBTEXT)
+    # [修改] 中文垫底替换为 F18，英文下沉 4px
+    draw_text_mixed(d, (ax + 90 + user_w + 15, ay + 44), data["time"], cn_font=F18, en_font=M18, fill=C_SUBTEXT, dy_en=4)
     
     y += header_h + 30
     
@@ -305,7 +314,8 @@ def render_detail_mode(data: dict) -> bytes:
             for para in el["lines"]:
                 lines = wrap_text(para, F28, INNER_W - 48)
                 for line in lines:
-                    draw_text_mixed(d, (PAD + 24, ty), line, cn_font=F28, en_font=F28, fill=(221, 221, 221, 255))
+                    # [修改] 英文下沉 6px
+                    draw_text_mixed(d, (PAD + 24, ty), line, cn_font=F28, en_font=F28, fill=(221, 221, 221, 255), dy_en=6)
                     ty += text_lh
                 ty += 10 # 段落间距
             y += bh + 15
