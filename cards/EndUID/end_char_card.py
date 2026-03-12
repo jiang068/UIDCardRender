@@ -103,7 +103,7 @@ def parse_html(html: str) -> dict:
             "name": name.get_text(strip=True) if name else ""
         })
 
-    # 武器 (含共鸣/宝石提取)
+    # 武器
     wp_card = soup.select_one(".weapon-card")
     if wp_card and "未装备武器" not in wp_card.get_text():
         lvl = wp_card.select_one(".weapon-level").contents[0].strip() if wp_card.select_one(".weapon-level") else "1"
@@ -169,8 +169,7 @@ def parse_html(html: str) -> dict:
     return data
 
 
-def draw_bg_and_char(canvas: Image.Image, data: dict):
-    # 1. 径向渐变背景 (严格使用你给的格式)
+def draw_bg_and_char(canvas: Image.Image, d: ImageDraw.ImageDraw, data: dict):
     sw, sh = W // 10, H // 10
     grad = Image.new("RGBA", (sw, sh), (0, 0, 0, 0))
     cx, cy = int(sw * 0.5), int(sh * 0.2)
@@ -185,9 +184,9 @@ def draw_bg_and_char(canvas: Image.Image, data: dict):
             b = int(40 + (20 - 40) * ratio)
             grad.putpixel((x, y), (r, g, b, 255))
             
-    canvas.alpha_composite(grad.resize((W, H), Image.Resampling.LANCZOS))
+    grad = grad.resize((W, H), Image.Resampling.LANCZOS)
+    canvas.alpha_composite(grad)
 
-    # 2. 叠底背景图 (严格使用你给的格式 putalpha(25))
     if data["bg_url"]:
         try:
             bg_img = _b64_fit(data["bg_url"], W, H).convert("RGBA")
@@ -195,7 +194,6 @@ def draw_bg_and_char(canvas: Image.Image, data: dict):
             canvas.alpha_composite(bg_img)
         except Exception: pass
 
-    # 3. 装饰网格与遮罩 (严格使用你给的格式 grid_c = (38, 39, 44, 180))
     grid = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     gd = ImageDraw.Draw(grid)
     grid_c = (38, 39, 44, 180)
@@ -211,7 +209,6 @@ def draw_bg_and_char(canvas: Image.Image, data: dict):
     grid.putalpha(mask)
     canvas.alpha_composite(grid)
 
-    # 4. 角色立绘及阴影
     if data["char_url"]:
         try:
             char_img = _b64_img(data["char_url"])
@@ -219,8 +216,18 @@ def draw_bg_and_char(canvas: Image.Image, data: dict):
             ch = 1150
             char_img = char_img.resize((cw, ch), Image.Resampling.LANCZOS)
             
+            c_mask = char_img.split()[3] if char_img.mode == 'RGBA' else Image.new("L", (cw, ch), 255)
+            fade_len = 200
+            fade_mask = Image.new("L", (cw, ch), 255)
+            fm_d = ImageDraw.Draw(fade_mask)
+            for fy in range(ch - fade_len, ch):
+                alpha = int(255 * max(0, 1 - (fy - (ch - fade_len)) / fade_len))
+                fm_d.line([(0, fy), (cw, fy)], fill=alpha)
+            c_mask = ImageChops.multiply(c_mask, fade_mask)
+            char_img.putalpha(c_mask)
+            
             shadow = Image.new("RGBA", (cw, ch), (0, 0, 0, 0))
-            shadow.paste((0, 0, 0, 153), char_img.split()[3])
+            shadow.paste((0, 0, 0, 153), c_mask)
             shadow = shadow.filter(ImageFilter.GaussianBlur(12))
             
             cx_char = W - cw + 120
@@ -229,22 +236,16 @@ def draw_bg_and_char(canvas: Image.Image, data: dict):
             canvas.alpha_composite(char_img, (cx_char, cy_char))
         except Exception: pass
 
-    # 5. 底部平滑渐变遮罩 (防止内容看不清)
-    grad_h = int(H * 0.65)
-    grad_y = H - grad_h
+    grad_h = H - 650 
+    grad_y = 650
     overlay = Image.new("RGBA", (W, grad_h), (0,0,0,0))
     od = ImageDraw.Draw(overlay)
     for y in range(grad_h):
-        ratio = 1 - (y / grad_h)
-        if ratio < 0.15:
-            alpha = 255
-        elif ratio < 0.55:
-            progress = (ratio - 0.15) / 0.40
-            alpha = int(255 - (255 - 242) * progress)
+        if y < 200:
+            alpha = int(242 * (y / 200))
         else:
-            progress = (ratio - 0.55) / 0.45
-            alpha = int(242 * (1 - progress))
-        od.line([(0, grad_h - y - 1), (W, grad_h - y - 1)], fill=(15, 16, 20, alpha))
+            alpha = 242
+        od.line([(0, y), (W, y)], fill=(15, 16, 20, alpha))
     canvas.alpha_composite(overlay, (0, grad_y))
 
 
@@ -259,7 +260,6 @@ def draw_skew_tag(canvas: Image.Image, d: ImageDraw.ImageDraw, x: int, y: int, i
     
     pts = [(x + skew, y), (x + w + skew, y), (x + w - skew, y + h), (x - skew, y + h)]
     
-    # 阴影层
     shadow = Image.new("RGBA", (W, H), (0,0,0,0))
     ImageDraw.Draw(shadow).polygon([(p[0]+4, p[1]+4) for p in pts], fill=(0,0,0,102))
     shadow = shadow.filter(ImageFilter.GaussianBlur(3))
@@ -283,7 +283,6 @@ def draw_skew_tag(canvas: Image.Image, d: ImageDraw.ImageDraw, x: int, y: int, i
 
 def draw_section_title(d: ImageDraw.ImageDraw, x: int, y: int, title_cn: str, title_en: str):
     d.line([(x, y), (x, y + 24)], fill=C_ACCENT, width=6)
-    # 文字阴影
     draw_text_mixed(d, (x + 15 + 2, y + 2), title_cn, cn_font=F24, en_font=F24, fill=(0,0,0,128), dy_en=5)
     draw_text_mixed(d, (x + 15, y), title_cn, cn_font=F24, en_font=F24, fill=C_TEXT, dy_en=5)
     cn_w = int(F24.getlength(title_cn))
@@ -295,12 +294,11 @@ def render(html: str) -> bytes:
     canvas = Image.new("RGBA", (W, H), C_BG)
     d = ImageDraw.Draw(canvas)
     
-    draw_bg_and_char(canvas, data)
+    draw_bg_and_char(canvas, d, data)
     
     # ---------------- 1. 顶部 Header 区 ----------------
     hy = PAD + 40
     
-    # 角色大名 (带阴影)
     draw_text_mixed(d, (PAD - 5, hy + 10), data["name"], cn_font=F100, en_font=F100, fill=(0,0,0,204), dy_en=20)
     draw_text_mixed(d, (PAD - 5, hy), data["name"], cn_font=F100, en_font=F100, fill=C_TEXT, dy_en=20)
     
@@ -324,15 +322,17 @@ def render(html: str) -> bytes:
     for tag in data["char_tags"]:
         tx += draw_skew_tag(canvas, d, tx, ty, "", tag, False)
 
-    # 右侧等级
+    # === [优化] 角色等级数字排版上调 ===
     rx = W - PAD
     lvl_y = hy
     lvl_num_w = int(O160.getlength(data["level"]))
-    draw_text_mixed(d, (rx - lvl_num_w, lvl_y + 10), data["level"], cn_font=O160, en_font=O160, fill=C_TEXT, dy_en=32)
+    # 向上移动约 20% 字高 (32px), 所以 y+10 变成 y-22
+    draw_text_mixed(d, (rx - lvl_num_w, lvl_y - 22), data["level"], cn_font=O160, en_font=O160, fill=C_TEXT, dy_en=32)
     
     lbl_text = "L E V E L"
     lbl_w = int(O24.getlength(lbl_text))
-    draw_text_mixed(d, (rx - lbl_w, lvl_y - 15), lbl_text, cn_font=O24, en_font=O24, fill=C_SUBTEXT, dy_en=5)
+    # 'LEVEL' 文字同样跟随上移
+    draw_text_mixed(d, (rx - lbl_w, lvl_y - 20), lbl_text, cn_font=O24, en_font=O24, fill=C_SUBTEXT, dy_en=5)
     
     pb_y = lvl_y + 175
     pb_text = f"PHASE {data['evolve_phase']} / POTENTIAL {data['potential']}"
@@ -342,16 +342,132 @@ def render(html: str) -> bytes:
     draw_text_mixed(d, (pb_x + 16, pb_y + 6), pb_text, cn_font=M18, en_font=M18, fill=(15, 16, 20, 255), dy_en=4)
 
 
-    # ---------------- 2. 底部 Content 区 ----------------
-    cy = H - 80 - 150 # 从底部往上排版 (Footer 80, margin-bottom 150)
+    # ---------------- 2. 内容区 (正向排版) ----------------
+    cy = 750 # 稍微上调技能位置给装备区留出拉伸空间
     
-    # === 装备区 (320px) ===
-    cy -= 320
-    eq_y = cy
-    draw_section_title(d, PAD, eq_y - 45, "装备", "EQUIPMENT")
+    # === 技能区 ===
+    draw_section_title(d, PAD, cy, "技能", "SKILLS")
+    sy = cy + 40
+    sx = PAD + 10
+    for sk in data["skills"]:
+        d.ellipse([sx, sy, sx + 90, sy + 90], fill=(20, 20, 20, 153), outline=(255, 255, 255, 38), width=2)
+        if sk["icon"]:
+            try:
+                ic = _b64_fit(sk["icon"], 70, 70)
+                canvas.alpha_composite(ic, (sx + 10, sy + 10))
+            except Exception: pass
+            
+        rw = int(O12.getlength(f"RANK {sk['level']}")) + 20
+        rx = sx + 45 - rw//2
+        d.rounded_rectangle([rx, sy + 80, rx + rw, sy + 100], radius=8, fill=(42, 42, 42, 255), outline=C_ACCENT, width=1)
+        draw_text_mixed(d, (rx + 10, sy + 83), f"RANK {sk['level']}", cn_font=O12, en_font=O12, fill=C_ACCENT, dy_en=2)
+        
+        nw = int(F16.getlength(sk["name"]))
+        draw_text_mixed(d, (sx + 45 - nw//2 + 1, sy + 110 + 1), sk["name"], cn_font=F16, en_font=F16, fill=(0,0,0,204), dy_en=3)
+        draw_text_mixed(d, (sx + 45 - nw//2, sy + 110), sk["name"], cn_font=F16, en_font=F16, fill=(221, 221, 221, 255), dy_en=3)
+        
+        sx += 90 + 35
+        
+    cy = sy + 100 + 35 
     
+    # === 武器区 ===
+    draw_section_title(d, PAD, cy, "武器", "WEAPON")
+    wy = cy + 40
+    
+    clip_pts = [(PAD, wy), (PAD + INNER_W, wy), (PAD + INNER_W, wy + 119), (PAD + INNER_W - 20, wy + 140), (PAD, wy + 140)]
+    
+    if data["weapon"]:
+        wp = data["weapon"]
+        d.polygon(clip_pts, fill=(224, 224, 224, 255))
+        d.polygon([(PAD, wy), (PAD + 8, wy), (PAD + 8, wy + 140), (PAD, wy + 140)], fill=C_ACCENT)
+        
+        # === [优化] 武器等级数字排版上调 ===
+        # 向上移动约 20% 字高 (12px), wy+20 变成 wy+8
+        draw_text_mixed(d, (PAD + 40, wy + 8), wp["level"], cn_font=O60, en_font=O60, fill=(26, 26, 26, 255), dy_en=12)
+        # 'Lv' 跟着上移
+        draw_text_mixed(d, (PAD + 40 + int(O60.getlength(wp["level"])) + 5, wy + 43), "Lv", cn_font=O20, en_font=O20, fill=(85, 85, 85, 255), dy_en=4)
+        
+        ws_y = wy + 85
+        for i in range(wp["rarity"]):
+            cx = PAD + 40 + i * 20
+            d.ellipse([cx, ws_y, cx + 16, ws_y + 16], fill=(85, 85, 85, 255))
+            
+        draw_text_mixed(d, (PAD + 40, wy + 105), wp["name"], cn_font=F24, en_font=F24, fill=(26, 26, 26, 255), dy_en=5)
+        
+        if wp["icon"]:
+            try:
+                ic = _b64_fit(wp["icon"], 400, 190).convert("RGBA")
+                ic = ic.rotate(8, expand=True, resample=Image.BICUBIC)
+                
+                wp_layer = Image.new("RGBA", (W, H), (0,0,0,0))
+                px = W - PAD - 160 - ic.width // 2
+                py = wy - 25 + 95 - ic.height // 2
+                wp_layer.paste(ic, (px, py))
+                
+                w_mask = Image.new("L", (W, H), 0)
+                ImageDraw.Draw(w_mask).polygon(clip_pts, fill=255)
+                
+                wp_layer.putalpha(ImageChops.multiply(wp_layer.split()[3], w_mask))
+                canvas.alpha_composite(wp_layer)
+            except Exception: pass
+            
+        # === [修复] 基质(配件) 绘图逻辑 ===
+        if wp["gem"]:
+            g_wrap = Image.new("RGBA", (120, 140), (0,0,0,0))
+            g_d = ImageDraw.Draw(g_wrap)
+            g_c = parse_color(wp["gem"]["rarity_color"])
+            
+            # 修改渐变：使用白色作为主背景，确保文字清晰
+            for g_y in range(140):
+                ratio = g_y / 140
+                if ratio < 0.7:
+                    # 上半部分：白色背景，不透明度 0.9 (230)
+                    bg_col = (255, 255, 255, 230)
+                else:
+                    # 下半部分：从白色向稀有度颜色过渡
+                    prog = (ratio - 0.7) / 0.3
+                    r = int(255 + (g_c[0] - 255) * prog)
+                    g = int(255 + (g_c[1] - 255) * prog)
+                    b = int(255 + (g_c[2] - 255) * prog)
+                    bg_col = (r, g, b, 230)
+                g_d.line([(0, g_y), (120, g_y)], fill=bg_col)
+                
+            if wp["gem"]["icon"]:
+                try:
+                    gic = _b64_fit(wp["gem"]["icon"], 90, 90)
+                    # 居中贴图
+                    g_wrap.paste(gic, (15, 8), gic)
+                except Exception: pass
+                
+            # 绘制基质名称 (深色文字在白色背景上)
+            name_text = wp["gem"]["name"]
+            tw = int(F14.getlength(name_text))
+            draw_text_mixed(g_d, (60 - tw // 2, 105), name_text, cn_font=F14, en_font=F14, fill=(26, 26, 26, 255), dy_en=3)
+            
+            # 底部稀有度色条
+            g_d.rectangle([0, 136, 120, 140], fill=g_c)
+            
+            # 圆角裁剪并合并
+            g_mask = _round_mask(120, 140, 8)
+            canvas.paste(g_wrap, (W - PAD - 150, wy), g_mask)
+            # 增加一个细微的黑色边框让卡片更立体
+            d.rounded_rectangle([W - PAD - 150, wy, W - PAD - 30, wy + 140], radius=8, outline=(0, 0, 0, 40), width=1)
+            
+    else:
+        d.polygon(clip_pts, fill=(255, 255, 255, 12))
+        d.polygon([(PAD, wy), (PAD + 8, wy), (PAD + 8, wy + 140), (PAD, wy + 140)], fill=(85, 85, 85, 255))
+        draw_text_mixed(d, (PAD + 40, wy + 55), "未装备武器", cn_font=F24, en_font=F24, fill=(102, 102, 102, 255), dy_en=5)
+
+    cy = wy + 140 + 35
+    
+    # === [优化] 装备区自适应填满剩余下半部高度 ===
+    draw_section_title(d, PAD, cy, "装备", "EQUIPMENT")
+    eq_y = cy + 40
     eq_lw = 280
-    eq_h = 320
+    
+    # 动态计算剩余可用高度，确保底部留有安全边距对接Footer
+    eq_h = (H - 80 - 100) - eq_y 
+    eq_h = max(320, eq_h) # 确保最小不会比原来短
     
     # 左侧身体装备
     d.rectangle([PAD, eq_y, PAD + eq_lw, eq_y + eq_h], fill=(255, 255, 255, 15), outline=(255, 255, 255, 30), width=1)
@@ -362,7 +478,9 @@ def render(html: str) -> bytes:
         if be["icon"]:
             try:
                 ic = _b64_fit(be["icon"], 200, 200)
-                canvas.alpha_composite(ic, (PAD + 40, eq_y + 70))
+                # 自适应居中绘制装备大图
+                ic_y = eq_y + (eq_h - 200) // 2 - 15
+                canvas.alpha_composite(ic, (PAD + 40, ic_y))
             except Exception: pass
         draw_text_mixed(d, (PAD + 15, eq_y + eq_h - 35), be["name"], cn_font=F18, en_font=F18, fill=(221, 221, 221, 255), dy_en=4)
     else:
@@ -387,104 +505,14 @@ def render(html: str) -> bytes:
             if eq["icon"]:
                 try:
                     ic = _b64_fit(eq["icon"], int(eq_rw*0.75), int(eq_rh*0.65))
-                    canvas.alpha_composite(ic, (cx + eq_rw//2 - ic.width//2, r_y + 15))
+                    # 动态居中
+                    ic_y = r_y + (eq_rh - ic.height) // 2 - 10
+                    canvas.alpha_composite(ic, (cx + eq_rw//2 - ic.width//2, ic_y))
                 except Exception: pass
             draw_text_mixed(d, (cx + 15, r_y + eq_rh - 35), eq["name"], cn_font=F18, en_font=F18, fill=(221, 221, 221, 255), dy_en=4)
         else:
             d.rectangle([cx, r_y, cx + eq_rw, r_y + eq_rh], fill=(255, 255, 255, 5))
             draw_text_mixed(d, (cx + eq_rw//2 - 20, r_y + eq_rh//2 - 10), "EMPTY", cn_font=M12, en_font=M12, fill=(255,255,255,25), dy_en=2)
-
-    # === 武器区 (140px) ===
-    cy -= (140 + 30 + 45)
-    wp_y = cy
-    draw_section_title(d, PAD, wp_y, "武器", "WEAPON")
-    wy = wp_y + 45
-    
-    # 倾斜卡片背景
-    clip_pts = [(PAD, wy), (PAD + INNER_W, wy), (PAD + INNER_W, wy + 119), (PAD + INNER_W - 20, wy + 140), (PAD, wy + 140)]
-    
-    if data["weapon"]:
-        wp = data["weapon"]
-        d.polygon(clip_pts, fill=(224, 224, 224, 255))
-        d.polygon([(PAD, wy), (PAD + 8, wy), (PAD + 8, wy + 140), (PAD, wy + 140)], fill=C_ACCENT)
-        
-        draw_text_mixed(d, (PAD + 40, wy + 20), wp["level"], cn_font=O60, en_font=O60, fill=(26, 26, 26, 255), dy_en=12)
-        draw_text_mixed(d, (PAD + 40 + int(O60.getlength(wp["level"])) + 5, wy + 55), "Lv", cn_font=O20, en_font=O20, fill=(85, 85, 85, 255), dy_en=4)
-        
-        ws_y = wy + 85
-        for i in range(wp["rarity"]):
-            cx = PAD + 40 + i * 20
-            d.ellipse([cx, ws_y, cx + 16, ws_y + 16], fill=(85, 85, 85, 255))
-            
-        draw_text_mixed(d, (PAD + 40, wy + 105), wp["name"], cn_font=F24, en_font=F24, fill=(26, 26, 26, 255), dy_en=5)
-        
-        # 武器图标
-        if wp["icon"]:
-            try:
-                ic = _b64_fit(wp["icon"], 400, 190).convert("RGBA")
-                ic = ic.rotate(8, expand=True, resample=Image.BICUBIC)
-                canvas.alpha_composite(ic, (W - PAD - 400, wy - 25))
-            except Exception: pass
-            
-        # 宝石(配件)
-        if wp["gem"]:
-            g_wrap = Image.new("RGBA", (120, 140), (0,0,0,0))
-            g_d = ImageDraw.Draw(g_wrap)
-            # 渐变背景
-            g_c = parse_color(wp["gem"]["rarity_color"])
-            for g_y in range(140):
-                ratio = g_y / 140
-                if ratio < 0.6:
-                    bg_col = (0, 0, 0, int(255 * 0.04))
-                else:
-                    prog = (ratio - 0.6) / 0.4
-                    bg_col = (int(g_c[0]*prog), int(g_c[1]*prog), int(g_c[2]*prog), int(34*prog))
-                g_d.line([(0, g_y), (120, g_y)], fill=bg_col)
-                
-            if wp["gem"]["icon"]:
-                try:
-                    gic = _b64_fit(wp["gem"]["icon"], 90, 90)
-                    g_wrap.paste(gic, (15, 8), gic)
-                except Exception: pass
-                
-            draw_text_mixed(g_d, (60 - int(F14.getlength(wp["gem"]["name"]))//2, 105), wp["gem"]["name"], cn_font=F14, en_font=F14, fill=(26, 26, 26, 255), dy_en=3)
-            g_d.rectangle([0, 136, 120, 140], fill=g_c)
-            
-            # 画圆角并贴到主画布
-            g_mask = _round_mask(120, 140, 8)
-            canvas.paste(g_wrap, (W - PAD - 150, wy), g_mask)
-            d.rounded_rectangle([W - PAD - 150, wy, W - PAD - 30, wy + 140], radius=8, outline=(0,0,0,20), width=1)
-            
-    else:
-        d.polygon(clip_pts, fill=(255, 255, 255, 12))
-        d.polygon([(PAD, wy), (PAD + 8, wy), (PAD + 8, wy + 140), (PAD, wy + 140)], fill=(85, 85, 85, 255))
-        draw_text_mixed(d, (PAD + 40, wy + 55), "未装备武器", cn_font=F24, en_font=F24, fill=(102, 102, 102, 255), dy_en=5)
-
-    # === 技能区 (~140px) ===
-    cy -= (120 + 30 + 45)
-    sk_y = cy
-    draw_section_title(d, PAD, sk_y, "技能", "SKILLS")
-    sy = sk_y + 45
-    sx = PAD + 10
-    for sk in data["skills"]:
-        d.ellipse([sx, sy, sx + 90, sy + 90], fill=(20, 20, 20, 153), outline=(255, 255, 255, 38), width=2)
-        if sk["icon"]:
-            try:
-                ic = _b64_fit(sk["icon"], 70, 70)
-                canvas.alpha_composite(ic, (sx + 10, sy + 10))
-            except Exception: pass
-            
-        rw = int(O12.getlength(f"RANK {sk['level']}")) + 20
-        rx = sx + 45 - rw//2
-        d.rounded_rectangle([rx, sy + 80, rx + rw, sy + 100], radius=8, fill=(42, 42, 42, 255), outline=C_ACCENT, width=1)
-        draw_text_mixed(d, (rx + 10, sy + 83), f"RANK {sk['level']}", cn_font=O12, en_font=O12, fill=C_ACCENT, dy_en=2)
-        
-        nw = int(F16.getlength(sk["name"]))
-        # 文字阴影
-        draw_text_mixed(d, (sx + 45 - nw//2 + 1, sy + 110 + 1), sk["name"], cn_font=F16, en_font=F16, fill=(0,0,0,204), dy_en=3)
-        draw_text_mixed(d, (sx + 45 - nw//2, sy + 110), sk["name"], cn_font=F16, en_font=F16, fill=(221, 221, 221, 255), dy_en=3)
-        
-        sx += 90 + 35
 
 
     # ---------------- 3. 底部 Footer 区 ----------------
