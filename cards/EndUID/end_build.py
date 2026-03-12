@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+import re
 from io import BytesIO
 
 from bs4 import BeautifulSoup
@@ -10,8 +11,8 @@ from PIL import Image, ImageDraw, ImageChops
 
 # 从 __init__.py 导入字体与工具函数
 from . import (
-    F12, F14, F16, F20, F48,
-    M14, M16,
+    F12, F14, F16, F20, F24, F30, F48, F56,
+    M12, M14, M16, M20, M22, M24,
     O14, O16, O18, O20,
     get_font, draw_text_mixed, _b64_img, _b64_fit
 )
@@ -29,6 +30,14 @@ C_SUBTEXT = (139, 139, 139, 255)
 C_BORDER = (255, 255, 255, 25)  # rgba(255,255,255,0.1)
 C_PANEL = (255, 255, 255, 8)    # rgba(255,255,255,0.03)
 
+def parse_color(c_str: str, default=(85, 85, 85, 255)) -> tuple:
+    c_str = c_str.strip().lower()
+    if c_str.startswith("#"):
+        c_str = c_str.lstrip("#")
+        if len(c_str) == 3: c_str = "".join(c+c for c in c_str)
+        if len(c_str) == 6:
+            return (int(c_str[0:2], 16), int(c_str[2:4], 16), int(c_str[4:6], 16), 255)
+    return default
 
 def parse_html(html: str) -> dict:
     soup = BeautifulSoup(html, "lxml")
@@ -45,7 +54,6 @@ def parse_html(html: str) -> dict:
         "domains": []
     }
 
-    # 解析背景与 Logo
     bg_el = soup.select_one(".bg-layer img")
     if bg_el: data["bg"] = bg_el.get("src", "")
     logo_el = soup.select_one(".footer-logo")
@@ -53,7 +61,6 @@ def parse_html(html: str) -> dict:
     av_el = soup.select_one(".avatar img")
     if av_el: data["avatar"] = av_el.get("src", "")
 
-    # 解析头部信息
     name_el = soup.select_one(".user-name")
     if name_el: data["name"] = name_el.get_text(strip=True)
     uid_el = soup.select_one(".user-uid")
@@ -67,36 +74,96 @@ def parse_html(html: str) -> dict:
 
     # 解析帝江号舱室
     for rc in soup.select(".room-card"):
-        type_el = rc.select_one(".room-type")
-        lvl_el = rc.select_one(".room-lvl")
-        chars = [img.get("src", "") for img in rc.select(".mini-avatar img")]
+        color_match = re.search(r"border-top:\s*2px\s*solid\s*(#[a-fA-F0-9]+)", rc.get("style", ""))
+        color = parse_color(color_match.group(1)) if color_match else (85, 85, 85, 255)
         
+        type_name = rc.select_one(".room-type-name").get_text(strip=True) if rc.select_one(".room-type-name") else ""
+        lvl_str = rc.select_one(".room-lvl-text").get_text(strip=True).replace("Lv.", "") if rc.select_one(".room-lvl-text") else "0"
+        
+        pips = rc.select(".level-pip")
+        max_lvl = len(pips)
+        cur_lvl = len([p for p in pips if 'filled' in p.get('class', [])])
+        
+        chars = []
+        for ch in rc.select(".room-chars > div"):
+            img = ch.select_one("img")
+            if img:
+                chars.append({"type": "img", "src": img.get("src", "")})
+            else:
+                chars.append({"type": "text", "text": ch.get_text(strip=True)})
+                
         data["rooms"].append({
-            "type": type_el.get_text(strip=True).replace("TYPE-", "") if type_el else "?",
-            "level": lvl_el.get_text(strip=True).replace("Lv.", "") if lvl_el else "0",
+            "name": type_name,
+            "level": lvl_str,
+            "max_lvl": max_lvl,
+            "cur_lvl": cur_lvl,
+            "color": color,
             "chars": chars
         })
 
     # 解析区域建设
     for dc in soup.select(".domain-card"):
-        d_name = dc.select_one(".domain-name")
-        d_lvl = dc.select_one(".domain-header .tag strong")
+        d_name = dc.select_one(".domain-name").get_text(strip=True) if dc.select_one(".domain-name") else ""
+        d_lvl = dc.select_one(".domain-header-left .tag strong").get_text(strip=True) if dc.select_one(".domain-header-left .tag strong") else "0"
         
+        money_badge = dc.select_one(".domain-money-badge")
+        money_str = ""
+        if money_badge:
+            # 提取 100 / 100 这类文字
+            clone = BeautifulSoup(str(money_badge), "lxml").select_one(".domain-money-badge")
+            lbl = clone.select_one(".domain-money-badge-label")
+            if lbl: lbl.decompose()
+            money_str = clone.get_text(strip=True)
+            
         settlements = []
         for sc in dc.select(".settlement-item"):
-            s_name = sc.select_one(".st-name")
-            s_lvl = sc.select_one(".st-lvl")
-            officers = [img.get("src", "") for img in sc.select(".mini-avatar img")]
+            bat_pct = sc.select_one(".money-battery-text").get_text(strip=True) if sc.select_one(".money-battery-text") else "0%"
+            bat_fill = 0
+            fill_el = sc.select_one(".money-battery-fill")
+            if fill_el:
+                m = re.search(r"height:\s*([\d\.]+)%", fill_el.get("style", ""))
+                if m: bat_fill = float(m.group(1))
+                
+            st_name = sc.select_one(".st-name").get_text(strip=True) if sc.select_one(".st-name") else ""
+            st_lvl = sc.select_one(".st-lvl").get_text(strip=True).replace("Lv.", "") if sc.select_one(".st-lvl") else "0"
             
+            st_money = sc.select_one(".st-money-text")
+            st_money_str = st_money.get_text(strip=True) if st_money else ""
+            
+            exp_text = sc.select_one(".exp-text").get_text(strip=True) if sc.select_one(".exp-text") else ""
+            exp_fill = 0
+            is_max = False
+            exp_el = sc.select_one(".exp-bar-fill")
+            if exp_el:
+                if "maxed" in exp_el.get("class", []): is_max = True
+                m = re.search(r"width:\s*([\d\.]+)%", exp_el.get("style", ""))
+                if m: exp_fill = float(m.group(1))
+                if is_max: exp_fill = 100
+                
+            officers = []
+            for oc in sc.select(".char-list > div"):
+                img = oc.select_one("img")
+                if img:
+                    officers.append({"type": "img", "src": img.get("src", "")})
+                else:
+                    officers.append({"type": "text", "text": oc.get_text(strip=True)})
+                    
             settlements.append({
-                "name": s_name.get_text(strip=True) if s_name else "?",
-                "level": s_lvl.get_text(strip=True).replace("Lv.", "") if s_lvl else "0",
+                "bat_pct": bat_pct,
+                "bat_fill": bat_fill,
+                "name": st_name,
+                "level": st_lvl,
+                "money_str": st_money_str,
+                "exp_text": exp_text,
+                "exp_fill": exp_fill,
+                "is_max": is_max,
                 "officers": officers
             })
             
         data["domains"].append({
-            "name": d_name.get_text(strip=True) if d_name else "?",
-            "level": d_lvl.get_text(strip=True) if d_lvl else "0",
+            "name": d_name,
+            "level": d_lvl,
+            "money_str": money_str,
             "settlements": settlements
         })
 
@@ -104,16 +171,13 @@ def parse_html(html: str) -> dict:
 
 
 def draw_bg(canvas: Image.Image, w: int, h: int, bg_src: str):
-    """绘制背景：背景图叠底 + 径向渐变 + 网格装饰"""
     if bg_src:
         try:
             bg_img = _b64_fit(bg_src, w, h).convert("RGBA")
-            # 模拟 opacity 0.1 和 mix-blend-mode: overlay (使用强透明度近似叠加)
-            bg_img.putalpha(Image.new("L", (w, h), 25)) # ~10% 透明度
+            bg_img.putalpha(Image.new("L", (w, h), 25))
             canvas.alpha_composite(bg_img)
         except Exception: pass
 
-    # Radial Gradient
     sw, sh = w // 10, h // 10
     cx, cy = int(sw * 0.5), int(sh * 0.2)
     grad = Image.new("RGBA", (sw, sh), (0, 0, 0, 0))
@@ -131,7 +195,6 @@ def draw_bg(canvas: Image.Image, w: int, h: int, bg_src: str):
     grad = grad.resize((w, h), Image.Resampling.LANCZOS)
     canvas.alpha_composite(grad)
 
-    # Grid Deco
     grid = Image.new("RGBA", (w, h), (0, 0, 0, 0))
     gd = ImageDraw.Draw(grid)
     grid_c = (38, 39, 44, 180)
@@ -150,88 +213,42 @@ def draw_bg(canvas: Image.Image, w: int, h: int, bg_src: str):
 
 
 def draw_section_title(d: ImageDraw.ImageDraw, x: int, y: int, title_cn: str, title_en: str):
-    """绘制统一的板块标题"""
     d.rectangle([x, y + 2, x + 4, y + 22], fill=C_ACCENT)
-    draw_text_mixed(d, (x + 12, y), title_cn, cn_font=F20, en_font=F20, fill=C_TEXT)
+    draw_text_mixed(d, (x + 12, y - 2), title_cn, cn_font=F20, en_font=F20, fill=C_TEXT)
     cn_w = int(F20.getlength(title_cn))
-    draw_text_mixed(d, (x + 12 + cn_w + 10, y + 6), title_en, cn_font=M14, en_font=M14, fill=C_SUBTEXT)
-    return 24 # 返回标题占据的高度
-
-
-def draw_avatar_list(canvas: Image.Image, d: ImageDraw.ImageDraw, x: int, y: int, max_w: int, avatars: list[str]) -> int:
-    """流式绘制 36x36 迷你头像列表，返回所占用的总高度"""
-    if not avatars:
-        # 空槽位占位符
-        d.rectangle([x, y, x + 36, y + 36], outline=(68, 68, 68, 255), width=1)
-        d.line([(x, y + 18), (x + 36, y + 18)], fill=(68, 68, 68, 255), width=1)
-        return 36
-        
-    curr_x, cur_y = x, y
-    gap = 5
-    sz = 36
-    
-    for av in avatars:
-        if curr_x + sz > x + max_w:
-            curr_x = x
-            cur_y += sz + gap
-            
-        d.rectangle([curr_x, cur_y, curr_x + sz, cur_y + sz], fill=(34, 34, 34, 255), outline=(68, 68, 68, 255), width=1)
-        if av:
-            try:
-                img = _b64_fit(av, sz, sz)
-                canvas.paste(img, (curr_x, cur_y))
-            except Exception: pass
-            
-        curr_x += sz + gap
-        
-    return (cur_y + sz) - y
+    draw_text_mixed(d, (x + 12 + cn_w + 10, y + 3), title_en, cn_font=M14, en_font=M14, fill=C_SUBTEXT)
+    return 24
 
 
 def render(html: str) -> bytes:
     data = parse_html(html)
     
-    # ---------------- 1. 高度预计算阶段 ----------------
+    # ---------------- 1. 高度预计算 ----------------
     cur_y = PAD
+    cur_y += 100 + 25 + 30 # Header
     
-    # Header 区域预留
-    header_h = 100
-    cur_y += header_h + 25 + 30 # padding-bottom 25 + gap 30
-    
-    # 帝江号区域预留
-    cur_y += 24 + 15 # title height + margin
-    spaceship_padding = 20
-    spaceship_w = INNER_W - spaceship_padding * 2
+    # 帝江号区域
+    cur_y += 24 + 15
+    space_pad = 20
     room_gap = 12
-    room_cols = 4
-    room_w = (spaceship_w - room_gap * (room_cols - 1)) // room_cols
+    room_cols = 5
+    room_w = (INNER_W - space_pad * 2 - room_gap * (room_cols - 1)) // room_cols # 约 166px
+    room_h = 104 # 固定高度
     
-    room_rows = math.ceil(len(data["rooms"]) / room_cols) if data["rooms"] else 1
-    # 模拟计算每行高度
-    spaceship_h = spaceship_padding * 2
+    room_rows = math.ceil(len(data["rooms"]) / room_cols) if data["rooms"] else 0
+    spaceship_h = space_pad * 2
     if not data["rooms"]:
-        spaceship_h += 60 # 暂无数据高度
+        spaceship_h += 60
     else:
-        temp_img = Image.new("RGBA", (1, 1))
-        temp_d = ImageDraw.Draw(temp_img)
-        for r_idx in range(room_rows):
-            row_items = data["rooms"][r_idx*room_cols : (r_idx+1)*room_cols]
-            max_rh = 0
-            for item in row_items:
-                # Room Card 内部: pad 10*2 + header(14+5+2) + avatar_list
-                # 头像最大可用宽度: room_w - 20
-                al_h = draw_avatar_list(temp_img, temp_d, 0, 0, room_w - 20, item["chars"])
-                ch = 20 + 21 + al_h
-                if ch > max_rh: max_rh = ch
-            spaceship_h += max_rh
-            if r_idx < room_rows - 1: spaceship_h += room_gap
-            
-    cur_y += spaceship_h + 30 # gap 30
+        spaceship_h += room_rows * room_h + max(0, room_rows - 1) * room_gap
+        
+    cur_y += spaceship_h + 30
     
-    # 区域建设预留
+    # 区域建设区域
     cur_y += 24 + 15
     domain_gap = 20
-    domain_cols = 3
-    domain_w = (INNER_W - domain_gap * (domain_cols - 1)) // domain_cols
+    domain_cols = 2
+    domain_w = (INNER_W - domain_gap * (domain_cols - 1)) // domain_cols # 450px
     domain_rows = math.ceil(len(data["domains"]) / domain_cols) if data["domains"] else 0
     
     domain_grid_h = 0
@@ -240,24 +257,20 @@ def render(html: str) -> bytes:
             row_items = data["domains"][r_idx*domain_cols : (r_idx+1)*domain_cols]
             max_dh = 0
             for dom in row_items:
-                # header: 42px (12*2 pad + 18 text)
-                dh = 42 + 15 * 2 # body pad 15*2
+                dh = 52 + 15 * 2 # header + body padding
                 if not dom["settlements"]:
-                    dh += 20
+                    dh += 30
                 else:
-                    for st in dom["settlements"]:
-                        # item pad 8*2 = 16. header 14+6 = 20. avatar list
-                        al_h = draw_avatar_list(temp_img, temp_d, 0, 0, domain_w - 30 - 16, st["officers"])
-                        dh += 16 + 20 + al_h + 10 # gap 10
-                    dh -= 10 # last gap
+                    # 每个据点的高度
+                    dh += len(dom["settlements"]) * 106 + max(0, len(dom["settlements"]) - 1) * 12
                 if dh > max_dh: max_dh = dh
             domain_grid_h += max_dh
             if r_idx < domain_rows - 1: domain_grid_h += domain_gap
             
-    cur_y += domain_grid_h + PAD + 50 # padding bottom
+    cur_y += domain_grid_h + PAD + 50
     total_h = max(cur_y, 800)
     
-    # ---------------- 2. 实际绘制阶段 ----------------
+    # ---------------- 2. 实际绘制 ----------------
     canvas = Image.new("RGBA", (W, total_h), C_BG)
     draw_bg(canvas, W, total_h, data["bg"])
     d = ImageDraw.Draw(canvas)
@@ -280,8 +293,8 @@ def render(html: str) -> bytes:
         uid_x = ux + name_w + 15
         uid_text = f"UID {data['uid']}"
         uid_w = int(M16.getlength(uid_text))
-        d.rounded_rectangle([uid_x, y + 32, uid_x + uid_w + 16, y + 32 + 24], radius=4, fill=(255, 255, 255, 12))
-        draw_text_mixed(d, (uid_x + 8, y + 35), uid_text, cn_font=M16, en_font=M16, fill=C_SUBTEXT)
+        d.rounded_rectangle([uid_x, y + 25, uid_x + uid_w + 16, y + 25 + 24], radius=4, fill=(255, 255, 255, 12))
+        draw_text_mixed(d, (uid_x + 8, y + 28), uid_text, cn_font=M16, en_font=M16, fill=C_SUBTEXT)
         
     # Tags
     tag_y = y + 65
@@ -309,7 +322,6 @@ def render(html: str) -> bytes:
     draw_section_title(d, PAD, y, "帝江号", "SPACESHIP")
     y += 24 + 15
     
-    # 模拟线性渐变背景 (90deg)
     grad_1d = Image.new("RGBA", (INNER_W, 1))
     for xi in range(INNER_W):
         ratio = 1 - (xi / max(INNER_W - 1, 1))
@@ -318,34 +330,67 @@ def render(html: str) -> bytes:
     canvas.alpha_composite(sp_bg, (PAD, y))
     d.rectangle([PAD, y, PAD + INNER_W, y + spaceship_h], outline=C_BORDER, width=1)
     
-    sy = y + spaceship_padding
+    sy = y + space_pad
     if not data["rooms"]:
         draw_text_mixed(d, (W//2 - 60, sy + 20), "暂无舱室数据", cn_font=F16, en_font=F16, fill=(102, 102, 102, 255))
     else:
         for r_idx in range(room_rows):
             row_items = data["rooms"][r_idx*room_cols : (r_idx+1)*room_cols]
-            max_rh = 0
             for c_idx, item in enumerate(row_items):
-                rx = PAD + spaceship_padding + c_idx * (room_w + room_gap)
+                rx = PAD + space_pad + c_idx * (room_w + room_gap)
+                ry = sy + r_idx * (room_h + room_gap)
                 
-                al_h = draw_avatar_list(temp_img, temp_d, 0, 0, room_w - 20, item["chars"])
-                ch = 20 + 21 + al_h
-                if ch > max_rh: max_rh = ch
-                
-                # Draw Room Card
-                d.rectangle([rx, sy, rx + room_w, sy + ch], fill=(0, 0, 0, 102), outline=C_BORDER, width=1)
+                # Card Background
+                d.rectangle([rx, ry, rx + room_w, ry + room_h], fill=(0, 0, 0, 102), outline=C_BORDER, width=1)
+                d.line([(rx, ry), (rx + room_w, ry)], fill=item["color"], width=2)
                 
                 # Header
-                draw_text_mixed(d, (rx + 10, sy + 10), f"TYPE-{item['type']}", cn_font=M14, en_font=M14, fill=(221, 221, 221, 255))
-                lvl_w = int(O16.getlength(f"Lv.{item['level']}"))
-                draw_text_mixed(d, (rx + room_w - 10 - lvl_w, sy + 8), f"Lv.{item['level']}", cn_font=O16, en_font=O16, fill=C_ACCENT)
-                d.line([(rx + 10, sy + 30), (rx + room_w - 10, sy + 30)], fill=(255, 255, 255, 25), width=1)
+                draw_text_mixed(d, (rx + 14, ry + 12), item["name"], cn_font=F14, en_font=M14, fill=(221, 221, 221, 255))
                 
-                # Avatars
-                draw_avatar_list(canvas, d, rx + 10, sy + 36, room_w - 20, item["chars"])
+                lvl_w = int(O14.getlength(f"Lv.{item['level']}"))
+                draw_text_mixed(d, (rx + room_w - 14 - lvl_w, ry + 13), f"Lv.{item['level']}", cn_font=O14, en_font=O14, fill=C_SUBTEXT)
                 
-            sy += max_rh + room_gap
-            
+                # Pips
+                pip_w = 14
+                pip_h = 10
+                pip_gap = 3
+                total_pip_w = item["max_lvl"] * pip_w + max(0, item["max_lvl"] - 1) * pip_gap
+                px_start = rx + room_w - 14 - lvl_w - 6 - total_pip_w
+                
+                for p_i in range(item["max_lvl"]):
+                    cx = px_start + p_i * (pip_w + pip_gap)
+                    cy = ry + 15
+                    skew = 2
+                    pts = [(cx + skew, cy), (cx + pip_w + skew, cy), (cx + pip_w - skew, cy + pip_h), (cx - skew, cy + pip_h)]
+                    
+                    if p_i < item["cur_lvl"]:
+                        d.polygon(pts, fill=item["color"])
+                    else:
+                        d.polygon(pts, outline=(255, 255, 255, 38), width=1)
+                        
+                d.line([(rx + 14, ry + 36), (rx + room_w - 14, ry + 36)], fill=(255, 255, 255, 12), width=1)
+                
+                # Avatars (44x44)
+                ay = ry + 46
+                if not item["chars"]:
+                    # 空闲
+                    d.rectangle([rx + 14, ay, rx + room_w - 14, ay + 44], outline=(51, 51, 51, 255), width=1)
+                    draw_text_mixed(d, (rx + room_w//2 - 12, ay + 14), "空闲", cn_font=F12, en_font=F12, fill=(68, 68, 68, 255))
+                else:
+                    curr_x = rx + 14
+                    for char in item["chars"]:
+                        if char["type"] == "img":
+                            try:
+                                av = _b64_fit(char["src"], 44, 44)
+                                canvas.paste(av, (curr_x, ay))
+                                d.rectangle([curr_x, ay, curr_x + 44, ay + 44], outline=(68, 68, 68, 255), width=1)
+                            except Exception: pass
+                        else:
+                            d.rectangle([curr_x, ay, curr_x + 44, ay + 44], outline=(68, 68, 68, 255), width=1)
+                            # 虚线效果简化为深灰色实线，居中文字
+                            draw_text_mixed(d, (curr_x + 10, ay + 14), char["text"][:2], cn_font=F12, en_font=F12, fill=(68, 68, 68, 255))
+                        curr_x += 44 + 6
+                        
     y += spaceship_h + 30
     
     # === Domains ===
@@ -359,60 +404,144 @@ def render(html: str) -> bytes:
         for c_idx, dom in enumerate(row_items):
             dx = PAD + c_idx * (domain_w + domain_gap)
             
-            # 计算当前卡片高度
-            dh = 42 + 30
-            if not dom["settlements"]:
-                dh += 20
-            else:
-                for st in dom["settlements"]:
-                    al_h = draw_avatar_list(temp_img, temp_d, 0, 0, domain_w - 30 - 16, st["officers"])
-                    dh += 16 + 20 + al_h + 10
-                dh -= 10
+            dh = 52 + 15 * 2
+            if not dom["settlements"]: dh += 30
+            else: dh += len(dom["settlements"]) * 106 + max(0, len(dom["settlements"]) - 1) * 12
             if dh > max_dh: max_dh = dh
             
-            # Draw Domain Card
+            # Domain BG
             d.rectangle([dx, dy, dx + domain_w, dy + dh], fill=C_PANEL, outline=C_BORDER, width=1)
-            d.rectangle([dx, dy, dx + domain_w, dy + 42], fill=(255, 255, 255, 12))
-            d.line([(dx, dy + 42), (dx + domain_w, dy + 42)], fill=C_BORDER, width=1)
+            d.rectangle([dx, dy, dx + domain_w, dy + 52], fill=(255, 255, 255, 12))
+            d.line([(dx, dy + 52), (dx + domain_w, dy + 52)], fill=C_BORDER, width=1)
             
-            draw_text_mixed(d, (dx + 15, dy + 12), dom["name"], cn_font=F16, en_font=M16, fill=C_TEXT)
+            # Header Name & Level
+            draw_text_mixed(d, (dx + 18, dy + 14), dom["name"], cn_font=F20, en_font=F20, fill=C_TEXT)
+            name_w = int(F20.getlength(dom["name"]))
             
-            lvl_str = str(dom["level"])
-            tl_w = int(F12.getlength("Lv.")) + int(O14.getlength(lvl_str)) + 16
-            tx_st = dx + domain_w - 15 - tl_w
-            d.rectangle([tx_st, dy + 10, tx_st + tl_w, dy + 30], fill=C_PANEL, outline=C_BORDER, width=1)
-            draw_text_mixed(d, (tx_st + 8, dy + 12), "Lv.", cn_font=F12, en_font=F12, fill=(204, 204, 204, 255))
-            draw_text_mixed(d, (tx_st + 8 + int(F12.getlength("Lv.")) + 2, dy + 10), lvl_str, cn_font=O14, en_font=O14, fill=C_ACCENT)
+            lvl_x = dx + 18 + name_w + 12
+            d.rectangle([lvl_x, dy + 16, lvl_x + 40, dy + 36], fill=C_PANEL, outline=C_BORDER, width=1)
+            draw_text_mixed(d, (lvl_x + 5, dy + 18), f"Lv.{dom['level']}", cn_font=F14, en_font=O14, fill=C_ACCENT)
             
-            sty = dy + 42 + 15
+            # Money Badge
+            if dom["money_str"]:
+                badge_w = int(M14.getlength(dom["money_str"])) + 50
+                bx = dx + domain_w - 18 - badge_w
+                d.rounded_rectangle([bx, dy + 14, bx + badge_w, dy + 38], radius=4, fill=(0, 0, 0, 64), outline=(255, 255, 255, 15), width=1)
+                draw_text_mixed(d, (bx + 10, dy + 18), "调度券", cn_font=F12, en_font=F12, fill=(102, 102, 102, 255))
+                # 区分高亮部分 (通过空格简单分割)
+                parts = dom["money_str"].split("/")
+                if len(parts) == 2:
+                    draw_text_mixed(d, (bx + 48, dy + 18), parts[0].strip(), cn_font=M14, en_font=M14, fill=C_ACCENT)
+                    p0_w = int(M14.getlength(parts[0].strip()))
+                    draw_text_mixed(d, (bx + 48 + p0_w, dy + 18), f" / {parts[1].strip()}", cn_font=M14, en_font=M14, fill=C_SUBTEXT)
+                else:
+                    draw_text_mixed(d, (bx + 48, dy + 18), dom["money_str"], cn_font=M14, en_font=M14, fill=C_SUBTEXT)
+                    
+            # Settlements
+            sty = dy + 52 + 15
             if not dom["settlements"]:
-                draw_text_mixed(d, (dx + domain_w//2 - 30, sty), "暂无据点", cn_font=F12, en_font=F12, fill=(102, 102, 102, 255))
+                draw_text_mixed(d, (dx + domain_w//2 - 30, sty + 5), "暂无据点", cn_font=F12, en_font=F12, fill=(102, 102, 102, 255))
             else:
                 for st in dom["settlements"]:
-                    al_h = draw_avatar_list(temp_img, temp_d, 0, 0, domain_w - 30 - 16, st["officers"])
-                    st_tot_h = 16 + 20 + al_h
+                    sh = 106
+                    d.rectangle([dx + 15, sty, dx + domain_w - 15, sty + sh], fill=(0, 0, 0, 51))
+                    d.line([(dx + 15, sty), (dx + 15, sty + sh)], fill=(85, 85, 85, 255), width=2)
                     
-                    d.rectangle([dx + 15, sty, dx + domain_w - 15, sty + st_tot_h], fill=(0, 0, 0, 51))
-                    d.line([(dx + 15, sty), (dx + 15, sty + st_tot_h)], fill=(85, 85, 85, 255), width=2)
+                    # Battery Col
+                    bat_x, bat_y = dx + 27, sty + 12
                     
-                    draw_text_mixed(d, (dx + 25, sty + 8), st["name"], cn_font=F14, en_font=M14, fill=(204, 204, 204, 255))
-                    slvl = f"Lv.{st['level']}"
-                    draw_text_mixed(d, (dx + domain_w - 15 - 8 - int(O14.getlength(slvl)), sty + 8), slvl, cn_font=O14, en_font=O14, fill=C_SUBTEXT)
+                    # Cap
+                    d.rounded_rectangle([bat_x + 10, bat_y - 4, bat_x + 26, bat_y + 1], radius=2, fill=(255, 255, 255, 30))
+                    # Body
+                    d.rounded_rectangle([bat_x, bat_y, bat_x + 36, bat_y + 60], radius=3, fill=(0, 0, 0, 76), outline=(255, 255, 255, 30), width=1)
                     
-                    draw_avatar_list(canvas, d, dx + 25, sty + 28, domain_w - 30 - 16, st["officers"])
-                    sty += st_tot_h + 10
+                    # Fill
+                    fill_h = max(0, min(60, int(60 * st["bat_fill"] / 100)))
+                    if fill_h > 0:
+                        fill_img = Image.new("RGBA", (34, fill_h))
+                        fd = ImageDraw.Draw(fill_img)
+                        for fi in range(fill_h):
+                            ratio = fi / fill_h
+                            fd.line([(0, fi), (34, fi)], fill=(int(255), int(230 + 25*ratio), int(0 + 102*ratio), 255))
+                        canvas.alpha_composite(fill_img, (bat_x + 1, bat_y + 60 - fill_h))
+                        
+                    # Battery Text (Draw shadow then text)
+                    tw = int(M12.getlength(st["bat_pct"]))
+                    t_pos = (bat_x + 18 - tw//2, bat_y + 24)
+                    for ox, oy in [(-1,-1), (1,-1), (-1,1), (1,1), (0,1)]:
+                        draw_text_mixed(d, (t_pos[0]+ox, t_pos[1]+oy), st["bat_pct"], cn_font=M12, en_font=M12, fill=(0, 0, 0, 255))
+                    draw_text_mixed(d, t_pos, st["bat_pct"], cn_font=M12, en_font=M12, fill=(255, 255, 255, 255))
+                    
+                    draw_text_mixed(d, (bat_x + 3, bat_y + 64), "调度券", cn_font=F12, en_font=F12, fill=(153, 153, 153, 255))
+                    
+                    # Info Col
+                    info_x = bat_x + 36 + 12
+                    info_y = sty + 12
+                    
+                    draw_text_mixed(d, (info_x, info_y + 2), st["name"], cn_font=F16, en_font=F16, fill=(204, 204, 204, 255))
+                    nw = int(F16.getlength(st["name"]))
+                    draw_text_mixed(d, (info_x + nw + 8, info_y + 3), f"Lv.{st['level']}", cn_font=O16, en_font=O16, fill=C_SUBTEXT)
+                    
+                    money_w = int(M14.getlength(st["money_str"]))
+                    mx = dx + domain_w - 15 - 12 - money_w
+                    # 区分高亮部分
+                    m_parts = st["money_str"].split("/")
+                    if len(m_parts) == 2:
+                        draw_text_mixed(d, (mx, info_y + 4), m_parts[0].strip(), cn_font=M14, en_font=M14, fill=C_ACCENT)
+                        mp0_w = int(M14.getlength(m_parts[0].strip()))
+                        draw_text_mixed(d, (mx + mp0_w, info_y + 4), f" / {m_parts[1].strip()}", cn_font=M14, en_font=M14, fill=C_SUBTEXT)
+                    else:
+                        draw_text_mixed(d, (mx, info_y + 4), st["money_str"], cn_font=M14, en_font=M14, fill=C_SUBTEXT)
+                        
+                    # Exp Row
+                    exp_y = info_y + 26
+                    draw_text_mixed(d, (info_x, exp_y), "EXP", cn_font=M12, en_font=M12, fill=(153, 153, 153, 255))
+                    
+                    exp_text_w = int(M12.getlength(st["exp_text"]))
+                    exp_text_x = dx + domain_w - 15 - 12 - exp_text_w
+                    tc = C_ACCENT if st["is_max"] else (153, 153, 153, 255)
+                    draw_text_mixed(d, (exp_text_x, exp_y), st["exp_text"], cn_font=M12, en_font=M12, fill=tc)
+                    
+                    bar_x = info_x + 28 + 8
+                    bar_w = exp_text_x - bar_x - 8
+                    d.rounded_rectangle([bar_x, exp_y + 3, bar_x + bar_w, exp_y + 13], radius=2, fill=(26, 26, 26, 255), outline=(255, 255, 255, 15), width=1)
+                    if st["exp_fill"] > 0:
+                        f_w = max(4, int(bar_w * st["exp_fill"] / 100))
+                        fc = C_ACCENT if st["is_max"] else (119, 119, 119, 255)
+                        d.rounded_rectangle([bar_x, exp_y + 3, bar_x + f_w, exp_y + 13], radius=2, fill=fc)
+                        
+                    # Officer Row
+                    off_y = exp_y + 18
+                    draw_text_mixed(d, (info_x, off_y + 12), "驻守", cn_font=F12, en_font=F12, fill=(153, 153, 153, 255))
+                    
+                    ox = info_x + 28 + 8
+                    if not st["officers"]:
+                        d.rectangle([ox, off_y, ox + 40, off_y + 40], outline=(51, 51, 51, 255), width=1)
+                        draw_text_mixed(d, (ox + 16, off_y + 12), "-", cn_font=F16, en_font=F16, fill=(68, 68, 68, 255))
+                    else:
+                        for off in st["officers"]:
+                            if off["type"] == "img":
+                                try:
+                                    av = _b64_fit(off["src"], 40, 40)
+                                    canvas.paste(av, (ox, off_y))
+                                    d.rectangle([ox, off_y, ox + 40, off_y + 40], outline=(68, 68, 68, 255), width=1)
+                                except Exception: pass
+                            else:
+                                d.rectangle([ox, off_y, ox + 40, off_y + 40], outline=(51, 51, 51, 255), width=1)
+                                draw_text_mixed(d, (ox + 10, off_y + 12), off["text"][:2], cn_font=F12, en_font=F12, fill=(68, 68, 68, 255))
+                            ox += 40 + 5
+
+                    sty += sh + 12
                     
         dy += max_dh + domain_gap
         
-    # === Footer Logo ===
+    # === Footer ===
     if data["logo"]:
         try:
             logo = _b64_img(data["logo"])
             lw = 120
             lh = int(logo.height * (lw / logo.width))
             logo = logo.resize((lw, lh), Image.Resampling.LANCZOS)
-            
-            # 模拟 opacity 0.3
             logo.putalpha(ImageChops.multiply(logo.split()[3], Image.new("L", (lw, lh), 76)))
             canvas.alpha_composite(logo, (W - 40 - lw, total_h - 20 - lh))
         except Exception: pass

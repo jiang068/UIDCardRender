@@ -182,10 +182,13 @@ _DISPATCH: list[tuple[list[str], str, str]] = [
 
     
     # Wiki 图鉴系统
-    (['Endfield Character Card', 'stats-table', 'feature-card'], 'end_wiki_char', '终末地角色图鉴'),
+    (['Endfield Character Card', 'char-info-left'], 'end_char_card', '终末地角色卡片'),
+    (['Endfield Character Wiki', 'stats-table', 'feature-card'], 'end_wiki_char', '终末地角色图鉴'),
     (['Endfield Weapon Wiki', 'weapon-img-small'], 'end_wiki_weapon', '终末地武器图鉴'),
     (['卡池信息', 'CURRENT BANNERS', 'banner-card'], 'end_wiki_gacha', '终末地卡池信息'),
     (['page-subtitle', 'group-section' ], 'end_wiki_list', '终末地图鉴列表'),
+    (['Endfield Calendar', '活动日历', 'pool-grid'], 'end_calendar', '终末地活动日历'),
+    (['Endfield Explore Card', '区域探索', 'explore-table'], 'end_explore', '终末地探索进度'),
 ]
 
 def render(html: str) -> bytes | None:
