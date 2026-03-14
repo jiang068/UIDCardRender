@@ -1,5 +1,10 @@
 Pillow
 beautifulsoup4
 lxml
-aiohttp
-httpx
+
+# aiohttp
+# httpx
+
+fastapi
+uvicorn
+pydantic
