@@ -22,6 +22,8 @@ from functools import lru_cache
 _ASSETS_DIR = Path(__file__).parent.parent.parent / "assets"
 _FONT_CN_PATH = _ASSETS_DIR / "H7GBKHeavy.TTF"
 _FONT_EN_PATH = _ASSETS_DIR / "Oswald-Medium.ttf"
+# --- [新增] Emoji 字体路径 ---
+_FONT_EMOJI_PATH = _ASSETS_DIR / "NotoColorEmoji.ttf" 
 
 def get_font(size: int, bold: bool = False, family: Literal['cn', 'mono', 'oswald'] = 'cn') -> ImageFont.FreeTypeFont:
     candidates: list[str] = []
@@ -36,6 +38,24 @@ def get_font(size: int, bold: bool = False, family: Literal['cn', 'mono', 'oswal
         except Exception:
             continue
     return ImageFont.load_default()
+
+# --- [新增] 专门的 Emoji 字体加载函数 ---
+def get_emoji_font(size: int) -> ImageFont.FreeTypeFont:
+    candidates = [
+        str(_FONT_EMOJI_PATH),
+        "C:/Windows/Fonts/seguiemj.ttf",
+        "/usr/share/fonts/truetype/noto/NotoColorEmoji.ttf",
+        "/usr/share/fonts/noto/NotoColorEmoji.ttf",
+        "/usr/share/fonts/google-noto-emoji/NotoColorEmoji.ttf"
+    ]
+    for p in candidates:
+        try:
+            if Path(p).exists():
+                return ImageFont.truetype(p, size)
+        except Exception:
+            continue
+    # 如果找不到 Emoji 字体，降级回普通中文字体
+    return get_font(size, family='cn')
 
 # 预置常用字号和对应的 bold 变量（FxxB），以及对应的等宽英数字体 Mxx 和 英文数字字体 Oxx。
 _COMMON_SIZES = [
@@ -166,29 +186,21 @@ def clear_image_caches() -> list[str]:
 
 # ---------- HTML → 模块 分流规则 ----------
 _DISPATCH: list[tuple[list[str], str, str]] = [
-    # 日常与基础功能
     (['Endfield Daily', '每日监控协议'], 'end_daily_card', '终末地日常'),
     (['终末地公告', 'ann-card-id', 'detail-avatar'], 'end_ann_card', '终末地公告'),
     (['EndUID 更新记录', 'UPDATE LOG', 'log-emoji'], 'end_update_log', '终末地更新日志'),
-    
-    # 玩家数据卡片
     (['Endfield Player Card', 'char-left-info'], 'end_card', '终末地名片'),
     (['Endfield Build Card', 'spaceship-section'], 'end_build', '终末地建设'),
     (['终末地角色别名',  'alias-grid'], 'end_alias_card', '终末地别名'),
     (['Endfield Explore Card', '区域探索', 'explore-table'], 'end_explore', '终末地探索进度'),
-
-    # 抽卡系统
     (['Endfield Gacha Help', '抽卡记录帮助', 'STEP 01: 获取数据'], 'end_gacha_help', '终末地抽卡帮助'),
     (['Endfield Gacha Record'], 'end_gacha_card', '终末地抽卡记录'),
-
-    # Wiki 图鉴系统
     (['Endfield Character Card', 'char-info-left'], 'end_char_card', '终末地角色卡片'),
     (['Endfield Character Wiki', 'stats-table', 'feature-card'], 'end_wiki_char', '终末地角色图鉴'),
     (['Endfield Weapon Wiki', 'weapon-img-small'], 'end_wiki_weapon', '终末地武器图鉴'),
     (['卡池信息', 'CURRENT BANNERS', 'banner-card'], 'end_wiki_gacha', '终末地卡池信息'),
     (['page-subtitle', 'group-section' ], 'end_wiki_list', '终末地图鉴列表'),
     (['Endfield Calendar', '活动日历', 'pool-grid'], 'end_calendar', '终末地活动日历'),
-
 ]
 
 def render(html: str) -> bytes | None:
