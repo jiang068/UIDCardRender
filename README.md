@@ -5,8 +5,26 @@
 ### 本地部署
 ```bash
 uv venv --python 3.12
+```
+本地使用的依赖略有不同：
+打开 `requiurements.txt`，改成：
+```py
+Pillow
+beautifulsoup4
+lxml
+
+aiohttp
+httpx
+
+# fastapi
+# uvicorn
+# pydantic
+```
+然后再：
+```bash
 uv pip install -r requirements.txt
 ```
+
 ### 使用
 ```bash
 uv run server.py
