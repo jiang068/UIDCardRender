@@ -23,7 +23,7 @@ _ASSETS_DIR = Path(__file__).parent.parent.parent / "assets"
 _FONT_CN_PATH = _ASSETS_DIR / "H7GBKHeavy.TTF"
 _FONT_EN_PATH = _ASSETS_DIR / "Oswald-Medium.ttf"
 # --- [新增] Emoji 字体路径 ---
-_FONT_EMOJI_PATH = _ASSETS_DIR / "NotoColorEmoji.ttf" 
+_FONT_EMOJI_PATH = _ASSETS_DIR / "NotoEmoji-Regular.ttf" 
 
 def get_font(size: int, bold: bool = False, family: Literal['cn', 'mono', 'oswald'] = 'cn') -> ImageFont.FreeTypeFont:
     candidates: list[str] = []
@@ -44,9 +44,9 @@ def get_emoji_font(size: int) -> ImageFont.FreeTypeFont:
     candidates = [
         str(_FONT_EMOJI_PATH),
         "C:/Windows/Fonts/seguiemj.ttf",
-        "/usr/share/fonts/truetype/noto/NotoColorEmoji.ttf",
-        "/usr/share/fonts/noto/NotoColorEmoji.ttf",
-        "/usr/share/fonts/google-noto-emoji/NotoColorEmoji.ttf"
+        "/usr/share/fonts/truetype/noto/NotoEmoji-Regular.ttf",
+        "/usr/share/fonts/noto/NotoEmoji-Regular.ttf",
+        "/usr/share/fonts/google-noto-emoji/NotoEmoji-Regular.ttf"
     ]
     for p in candidates:
         try:
