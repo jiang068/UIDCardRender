@@ -312,7 +312,7 @@ def render(html: str) -> bytes:
             else:
                 _draw_text_shadow(d, (val_x, val_y), val_text, F42, M42, C_WHITE)
         else:
-            if lbl_text == "千道门扉" and val_text != "6000":
+            if not val_text.startswith("Lv") and val_text != "6000":
                 _draw_text_shadow(d, (val_x, val_y), val_text, F42, M42, C_WARN_RED)
             else:
                 _draw_text_shadow(d, (val_x, val_y), val_text, F42, M42, C_WHITE)
