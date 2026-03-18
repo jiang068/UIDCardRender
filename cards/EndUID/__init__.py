@@ -191,7 +191,7 @@ _DISPATCH: list[tuple[list[str], str, str]] = [
     (['EndUID 更新记录', 'UPDATE LOG', 'log-emoji'], 'end_update_log', '终末地更新日志'),
     (['Endfield Player Card', 'char-left-info'], 'end_card', '终末地名片'),
     (['Endfield Build Card', 'spaceship-section'], 'end_build', '终末地建设'),
-    (['终末地角色别名',  'alias-grid'], 'end_alias_card', '终末地别名'),
+    (['终末地角色别名'], 'end_alias_card', '终末地别名'),
     (['Endfield Explore Card', '区域探索', 'explore-table'], 'end_explore', '终末地探索进度'),
     (['Endfield Gacha Help', '抽卡记录帮助', 'STEP 01: 获取数据'], 'end_gacha_help', '终末地抽卡帮助'),
     (['Endfield Gacha Record'], 'end_gacha_card', '终末地抽卡记录'),
