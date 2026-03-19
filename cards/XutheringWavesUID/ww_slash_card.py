@@ -36,10 +36,10 @@ CHAIN_COLORS = {
 }
 
 
-from . import draw_text_mixed, M12, M14, M15, M16, M17, M18, M20, M22, M24, M26, M28, M30, M32, M34, M36, M38, M42, M48, M72
+from . import draw_text_mixed, M12, M14, M15, M16, M17, M18, M20, M22, M24, M26, M28, M30, M32, M34, M36, M38, M42, M48, M60, M72
 
 # 使用包级统一字体对象（从包里导入以复用同一实例）
-from . import F12, F14, F18, F20, F24, F28, F30, F40, F42, F56, _b64_img, _b64_fit, _round_mask
+from . import F12, F14, F18, F20, F24, F28, F30, F40, F42, F56, F60,  _b64_img, _b64_fit, _round_mask
 
 def _ty(font, text: str, box_h: int) -> int:
     bb = font.getbbox(text)
@@ -314,9 +314,16 @@ def draw_slash_block(chal: dict) -> Image.Image:
             img.paste(h_bg, (0,0))
         except: pass
 
-    hx = 40
-    _draw_text_shadow(d, (hx, 32), chal["id"], F56, C_WHITE)
-    id_w = F56.getlength(chal["id"])
+    id_text = chal["id"]
+    text_len = len(id_text) # 判断位数
+
+    if text_len == 1:
+        hx = 38
+    else:
+        hx = 20
+
+    _draw_text_shadow(d, (hx, 26), id_text, F60, C_WHITE)
+    id_w = F60.getlength(id_text)
     _draw_text_shadow(d, (hx + id_w + 20, 42), chal["name"], F40, C_WHITE)
 
     hrx = INNER_W - 40

@@ -23,40 +23,41 @@ from functools import lru_cache
 _ASSETS_DIR = Path(__file__).parent.parent.parent / "assets"
 _FONT_CN_PATH = _ASSETS_DIR / "H7GBKHeavy.TTF"
 _FONT_MONO_PATH = _ASSETS_DIR / "JetBrainsMono-Medium.ttf"
+# 新增：日韩字体路径（请确保 assets 文件夹下有这两个文件，如果没有可以改成你实际使用的字体名）
+_FONT_JP_PATH = _ASSETS_DIR / "NotoSansJP-Medium.ttf" 
+_FONT_KR_PATH = _ASSETS_DIR / "NotoSansKR-Medium.ttf"
 
 
-def get_font(size: int, bold: bool = False, family: Literal['cn', 'mono'] = 'cn') -> ImageFont.FreeTypeFont:
-    """返回指定大小的字体。
-    - family='cn' 使用中文字体（优先 assets/H7GBKHeavy.TTF）
-    - family='mono' 使用等宽英数字字体（优先 assets/JetBrainsMono-Medium.ttf）
-    - bold: 如果为 True，暂时映射到同一字体文件（项目中未提供单独的 bold 字体），仅保留变量名兼容性。
-    当 assets 中字体文件不可用时会回退到系统常见字体或 PIL 默认字体。
-    """
-    # NOTE: bold 参数在没有专门 bold 字体文件时不改变所选文件，保证 FxxB 变量存在且可用。
+def get_font(size: int, bold: bool = False, family: Literal['cn', 'mono', 'jp', 'kr'] = 'cn') -> ImageFont.FreeTypeFont:
+    """返回指定大小的字体。支持中、英等宽、日、韩四种 family。"""
     candidates: list[str] = []
     if family == 'cn':
         candidates = [str(_FONT_CN_PATH), "C:/Windows/Fonts/msyh.ttc", "C:/Windows/Fonts/simhei.ttf", "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc"]
-    else:
+    elif family == 'mono':
         candidates = [str(_FONT_MONO_PATH), "C:/Windows/Fonts/JetBrainsMono-Medium.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf"]
+    elif family == 'jp':
+        candidates = [str(_FONT_JP_PATH), "C:/Windows/Fonts/meiryo.ttc", "C:/Windows/Fonts/msgothic.ttc", "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc"]
+    elif family == 'kr':
+        candidates = [str(_FONT_KR_PATH), "C:/Windows/Fonts/malgun.ttf", "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc"]
+        
     for p in candidates:
         try:
             return ImageFont.truetype(p, size)
         except Exception:
             continue
-    # 最后退回到 PIL 内建默认字体（尺寸无法设置）
     return ImageFont.load_default()
 
-# 预置常用字号和对应的 bold 变量（FxxB），以及对应的等宽英数字体 Mxx。
-# 这里列出 repo 中常见/需要兼容的字号，保证旧代码中引用的变量名存在。
+# 预置常用字号
 _COMMON_SIZES = [10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
                  22, 24, 26, 28, 30, 32, 34, 36, 38, 40,
                  42, 46, 48, 52, 56, 60, 72, 80]
 for _s in _COMMON_SIZES:
-    globals()[f"F{_s}"] = get_font(_s)
-    # bold 变量名仍然映射到同一字体对象，保证兼容性（变量存在且可用）
+    globals()[f"F{_s}"] = get_font(_s, family='cn')
     globals()[f"F{_s}B"] = globals()[f"F{_s}"]
-    # 同尺寸的等宽英数字体
     globals()[f"M{_s}"] = get_font(_s, family='mono')
+    # 新增：预加载同尺寸的日韩字体变量 (Jxx, Kxx)
+    globals()[f"J{_s}"] = get_font(_s, family='jp')
+    globals()[f"K{_s}"] = get_font(_s, family='kr')
 
 
 def find_font_file(family: Literal['cn', 'mono'] = 'cn') -> str | None:
@@ -85,6 +86,18 @@ def _is_pure_en_num(ch: str) -> bool:
     """判断是否为纯字母或数字，用于应用 Y 轴偏移。"""
     return 'a' <= ch <= 'z' or 'A' <= ch <= 'Z' or '0' <= ch <= '9'
 
+# 【新增：判断韩文字符】
+def _is_kr(ch: str) -> bool:
+    o = ord(ch)
+    # 覆盖主要韩文音节和字母组合
+    return (0xAC00 <= o <= 0xD7AF) or (0x1100 <= o <= 0x11FF) or (0x3130 <= o <= 0x318F)
+
+# 【新增：判断日文假名】
+def _is_jp_kana(ch: str) -> bool:
+    o = ord(ch)
+    # 覆盖平假名和片假名
+    return 0x3040 <= o <= 0x30FF
+
 def draw_text_mixed(draw: ImageDraw.ImageDraw, xy: tuple, text: str,
                     cn_font: ImageFont.FreeTypeFont | None = None,
                     en_font: ImageFont.FreeTypeFont | None = None,
@@ -93,21 +106,36 @@ def draw_text_mixed(draw: ImageDraw.ImageDraw, xy: tuple, text: str,
     if en_font is None: en_font = M24
     x, y = xy
 
-    # --- 核心改进：动态计算 Y 轴偏移 ---
-    # 获取当前英文字号大小
-    f_size = getattr(en_font, 'size', 24)
+    # 获取当前字体大小
+    f_size_cn = getattr(cn_font, 'size', 24)
+    f_size_en = getattr(en_font, 'size', 24)
     
-    # 比例系数：根据视觉测试，JetBrains Mono 通常需要上提字号的 5% ~ 8%
-    # 这里我们取一个中间值 0.07。
-    # 这样：18px 提 ~1.2px；72px 提 ~5px。实现大字提得多，小字提得少。
-    dynamic_offset = -int(f_size * 0.2) 
+    # 动态获取匹配尺寸的日韩字体
+    jp_font = globals().get(f"J{f_size_cn}", cn_font)
+    kr_font = globals().get(f"K{f_size_cn}", cn_font)
+
+    # --- 核心改进：为不同语言定义 Y 轴动态偏移 (负数表示向上提) ---
+    en_offset = -int(f_size_en * 0.20)
+    jp_offset = -int(f_size_cn * 0.35)  # 日语假名偏低，向上提 35%
+    kr_offset = -int(f_size_cn * 0.30)  # 韩语偏低，向上提 30%
 
     for ch in text:
         is_en = _is_pure_en_num(ch)
-        f = en_font if is_en else cn_font
         
-        # 应用动态偏移
-        draw_y = y + dynamic_offset if is_en else y
+        # 智能分流判定与应用偏移
+        if is_en:
+            f = en_font
+            draw_y = y + en_offset
+        elif _is_kr(ch):
+            f = kr_font
+            draw_y = y + kr_offset
+        elif _is_jp_kana(ch):
+            f = jp_font
+            draw_y = y + jp_offset
+        else:
+            # 汉字、标点符号等默认使用中文字体，不偏移
+            f = cn_font
+            draw_y = y
         
         draw.text((x, draw_y), ch, font=f, fill=fill)
         x += int(f.getlength(ch))
