@@ -188,7 +188,7 @@ def clear_image_caches() -> list[str]:
 _DISPATCH: list[tuple[list[str], str, str]] = [
     (['Endfield Daily', '每日监控协议'], 'end_daily_card', '终末地日常'),
     (['终末地公告', 'ann-card-id', 'detail-avatar'], 'end_ann_card', '终末地公告'),
-    (['EndUID 更新记录', 'UPDATE LOG', 'log-emoji'], 'end_update_log', '终末地更新日志'),
+    (['EndUID 更新记录'], 'end_update_log', '终末地更新日志'),
     (['Endfield Player Card', 'char-left-info'], 'end_card', '终末地名片'),
     (['Endfield Build Card', 'spaceship-section'], 'end_build', '终末地建设'),
     (['终末地角色别名'], 'end_alias_card', '终末地别名'),

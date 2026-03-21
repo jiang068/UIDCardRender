@@ -25,8 +25,9 @@ _FONT_CN_PATH = _ASSETS_DIR / "H7GBKHeavy.TTF"
 _FONT_MONO_PATH = _ASSETS_DIR / "JetBrainsMono-Medium.ttf"
 _FONT_JP_PATH = _ASSETS_DIR / "NotoSansJP-Medium.ttf" 
 _FONT_KR_PATH = _ASSETS_DIR / "NotoSansKR-Medium.ttf"
+_FONT_EMOJI_PATH = _ASSETS_DIR / "NotoEmoji-Regular.ttf" # 新增 Emoji 字体路径
 
-def get_font(size: int, bold: bool = False, family: Literal['cn', 'mono', 'jp', 'kr'] = 'cn') -> ImageFont.FreeTypeFont:
+def get_font(size: int, bold: bool = False, family: Literal['cn', 'mono', 'jp', 'kr', 'emoji'] = 'cn') -> ImageFont.FreeTypeFont:
     candidates: list[str] = []
     if family == 'cn':
         candidates = [str(_FONT_CN_PATH), "C:/Windows/Fonts/msyh.ttc", "C:/Windows/Fonts/simhei.ttf", "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc"]
@@ -36,6 +37,8 @@ def get_font(size: int, bold: bool = False, family: Literal['cn', 'mono', 'jp', 
         candidates = [str(_FONT_JP_PATH), "C:/Windows/Fonts/meiryo.ttc", "C:/Windows/Fonts/msgothic.ttc", "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc"]
     elif family == 'kr':
         candidates = [str(_FONT_KR_PATH), "C:/Windows/Fonts/malgun.ttf", "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc"]
+    elif family == 'emoji':
+        candidates = [str(_FONT_EMOJI_PATH), "C:/Windows/Fonts/seguiemj.ttf", "/usr/share/fonts/truetype/noto/NotoColorEmoji.ttf"]
         
     for p in candidates:
         try:
@@ -54,6 +57,7 @@ for _s in _COMMON_SIZES:
     globals()[f"M{_s}"] = get_font(_s, family='mono')
     globals()[f"J{_s}"] = get_font(_s, family='jp')
     globals()[f"K{_s}"] = get_font(_s, family='kr')
+    globals()[f"E{_s}"] = get_font(_s, family='emoji') # 注入 E 系列 Emoji 字体
 
 def _is_pure_en_num(ch: str) -> bool:
     return 'a' <= ch <= 'z' or 'A' <= ch <= 'Z' or '0' <= ch <= '9'
@@ -106,12 +110,10 @@ def _looks_like_base64(s: str) -> bool:
     if not s: return False
     if s.startswith('data:'): return True
     if s.startswith('base64://'): return True
-    # 只要长度足够大，直接视为原生 base64 (兼容 pil_to_b64)
     if len(s) > 200: return True
     return False
 
 def _clean_b64_string(src: str) -> str:
-    """清理 base64 字符串的前缀，提取纯数据部分"""
     if src.startswith('base64://'):
         return src.replace('base64://', '', 1)
     if ',' in src:
@@ -191,9 +193,16 @@ for _mi in pkgutil.iter_modules([str(_here)]):
 
 # ---------- HTML → 模块 分流规则 ----------
 _DISPATCH: list[tuple[list[str], str, str]] = [
-    (['战双角色面板', '战斗参数'], 'pgr_char_card', '角色面板'),
-    (['战双幻痛囚笼', '幻痛囚笼'], 'pgr_cage', '幻痛囚笼'),
-    (['战双纷争战区', '纷争战区'], 'pgr_area', '纷争战区'),
+    (['战双体力', '日程助手'], 'mr_card', '战双每日'),
+    (['我的资料', '角色信息'], 'pgr_roleinfo', '战双卡片'),
+    (['战双角色面板', '战斗参数'], 'pgr_char_card', '战双角色面板'),
+    (['战双幻痛囚笼', '幻痛囚笼'], 'pgr_cage', '战双幻痛囚笼'),
+    (['战双纷争战区', '纷争战区'], 'pgr_area', '战双纷争战区'),
+    (['战双涂装列表', '角色涂装', '武器涂装'], 'pgr_fashion', '战双涂装列表'),
+    (['战双资源看板', '半年资源总览'], 'pgr_resource', '战双资源看板'),
+    (['战双诺曼复兴战', '诺曼复兴战'], 'pgr_stronghold', '战双复兴战'),
+    (['战双历战映射', '历战映射'], 'pgr_transfinite', '战双历战映射'),
+    (['PGRUID 更新记录'], 'pgr_update_log', '战双更新记录'),
 ]
 
 def render(html: str) -> bytes | None:
