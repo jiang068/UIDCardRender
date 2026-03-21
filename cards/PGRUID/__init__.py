@@ -191,6 +191,8 @@ for _mi in pkgutil.iter_modules([str(_here)]):
 
 # ---------- HTML → 模块 分流规则 ----------
 _DISPATCH: list[tuple[list[str], str, str]] = [
+    (['战双角色面板', '战斗参数'], 'pgr_char_card', '角色面板'),
+    (['战双幻痛囚笼', '幻痛囚笼'], 'pgr_cage', '幻痛囚笼'),
     (['战双纷争战区', '纷争战区'], 'pgr_area', '纷争战区'),
 ]
 
