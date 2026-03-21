@@ -144,7 +144,6 @@ def draw_text_mixed(draw: ImageDraw.ImageDraw, xy: tuple, text: str,
 # ---------- 集中化的图像加载与缓存（只缓存来自磁盘的图片，data: URI/长 base64 不缓存） ----------
 _BASE_DIR = Path(__file__).parent.parent
 
-
 def _looks_like_base64(s: str) -> bool:
     if not s: return False
     # data: URIs explicitly considered base64
@@ -154,20 +153,36 @@ def _looks_like_base64(s: str) -> bool:
         return True
     return False
 
-
 @lru_cache(maxsize=16)
 def _b64_img_from_path(p: str) -> Image.Image:
     # cached loader for local file paths only
     return Image.open(p).convert('RGBA')
 
+@lru_cache(maxsize=32)
+def _b64_fit_from_path(p: str, w: int, h: int) -> Image.Image:
+    img = Image.open(p).convert('RGBA')
+    return ImageOps.fit(img, (w, h), Image.Resampling.LANCZOS)
+
+def _resolve_path(src: str) -> Path | None:
+    """
+    【核心修复】路径探测器
+    兼容前端的后缀欺骗：如果原后缀文件不存在，主动探测同名的 .webp 文件
+    """
+    p = Path(src) if Path(src).is_absolute() else (_BASE_DIR / src)
+    
+    # 1. 优先找原文件 (Windows 环境下未被删除的 png 等)
+    if p.exists():
+        return p
+        
+    # 2. 如果原文件不在了 (Linux 上的常态)，主动将后缀切换为 .webp 去寻找
+    webp_p = p.with_suffix('.webp')
+    if webp_p.exists():
+        return webp_p
+        
+    return None
 
 def _b64_img(src: str) -> Image.Image:
     """Load an image from src.
-
-    - If src is a data: URI or looks like a long base64 blob, decode immediately (no caching).
-    - If src resolves to an existing local path (relative to project root or absolute), use
-      a cached loader so repeated loads are fast.
-    - Otherwise, fall back to decoding base64 directly (no caching).
     """
     if not src:
         raise ValueError('empty src')
@@ -178,47 +193,41 @@ def _b64_img(src: str) -> Image.Image:
             src = src.split(',', 1)[1]
         return Image.open(BytesIO(base64.b64decode(src))).convert('RGBA')
 
-    # try resolve as local path
-    p = Path(src) if Path(src).is_absolute() else (_BASE_DIR / src)
-    try:
-        if p.exists():
+    # 调用我们的路径探测器寻找物理文件
+    p = _resolve_path(src)
+    if p:
+        try:
             return _b64_img_from_path(str(p))
-    except Exception:
-        # if path checking fails, fallback to base64 decode
-        pass
+        except Exception:
+            pass
 
     # fallback: assume src is base64 content
     if ',' in src:
         src = src.split(',', 1)[1]
     return Image.open(BytesIO(base64.b64decode(src))).convert('RGBA')
 
-
-@lru_cache(maxsize=32)
-def _b64_fit_from_path(p: str, w: int, h: int) -> Image.Image:
-    img = Image.open(p).convert('RGBA')
-    return ImageOps.fit(img, (w, h), Image.Resampling.LANCZOS)
-
-
 def _b64_fit(src: str, w: int, h: int) -> Image.Image:
     # behave similarly to _b64_img regarding caching
     if not src:
         raise ValueError('empty src')
+        
     if _looks_like_base64(src):
         if ',' in src: src = src.split(',', 1)[1]
         img = Image.open(BytesIO(base64.b64decode(src))).convert('RGBA')
         return ImageOps.fit(img, (w, h), Image.Resampling.LANCZOS)
 
-    p = Path(src) if Path(src).is_absolute() else (_BASE_DIR / src)
-    try:
-        if p.exists():
+    # 调用我们的路径探测器寻找物理文件
+    p = _resolve_path(src)
+    if p:
+        try:
             return _b64_fit_from_path(str(p), w, h)
-    except Exception:
-        pass
+        except Exception:
+            pass
 
+    # fallback: assume src is base64 content
     if ',' in src: src = src.split(',', 1)[1]
     img = Image.open(BytesIO(base64.b64decode(src))).convert('RGBA')
     return ImageOps.fit(img, (w, h), Image.Resampling.LANCZOS)
-
 
 @lru_cache(maxsize=16)
 def _round_mask(w: int, h: int, r: int) -> Image.Image:

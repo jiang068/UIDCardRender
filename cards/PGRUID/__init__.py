@@ -133,6 +133,29 @@ def _fetch_http_image(url: str) -> Image.Image | None:
 def _b64_img_from_path(p: str) -> Image.Image:
     return Image.open(p).convert('RGBA')
 
+@lru_cache(maxsize=32)
+def _b64_fit_from_path(p: str, w: int, h: int) -> Image.Image:
+    img = Image.open(p).convert('RGBA')
+    return ImageOps.fit(img, (w, h), Image.Resampling.LANCZOS)
+
+def _resolve_path(src: str) -> Path | None:
+    """
+    【核心修复】路径探测器
+    兼容前端的后缀欺骗：如果原后缀文件不存在，主动探测同名的 .webp 文件
+    """
+    p = Path(src) if Path(src).is_absolute() else (_BASE_DIR / src)
+    
+    # 1. 优先找原文件 (Windows 环境下未被删除的 png 等)
+    if p.exists():
+        return p
+        
+    # 2. 如果原文件不在了 (Linux 上的常态)，主动将后缀切换为 .webp 去寻找
+    webp_p = p.with_suffix('.webp')
+    if webp_p.exists():
+        return webp_p
+        
+    return None
+
 def _b64_img(src: str) -> Image.Image:
     if not src: raise ValueError('empty src')
         
@@ -145,18 +168,17 @@ def _b64_img(src: str) -> Image.Image:
         b64_data = _clean_b64_string(src)
         return Image.open(BytesIO(base64.b64decode(b64_data))).convert('RGBA')
         
-    p = Path(src) if Path(src).is_absolute() else (_BASE_DIR / src)
-    try:
-        if p.exists(): return _b64_img_from_path(str(p))
-    except Exception: pass
+    # 调用路径探测器
+    p = _resolve_path(src)
+    if p:
+        try:
+            return _b64_img_from_path(str(p))
+        except Exception: pass
     
+    # 终极兜底
     b64_data = _clean_b64_string(src)
     return Image.open(BytesIO(base64.b64decode(b64_data))).convert('RGBA')
 
-@lru_cache(maxsize=32)
-def _b64_fit_from_path(p: str, w: int, h: int) -> Image.Image:
-    img = Image.open(p).convert('RGBA')
-    return ImageOps.fit(img, (w, h), Image.Resampling.LANCZOS)
 
 def _b64_fit(src: str, w: int, h: int) -> Image.Image:
     if not src: raise ValueError('empty src')
@@ -171,11 +193,14 @@ def _b64_fit(src: str, w: int, h: int) -> Image.Image:
         img = Image.open(BytesIO(base64.b64decode(b64_data))).convert('RGBA')
         return ImageOps.fit(img, (w, h), Image.Resampling.LANCZOS)
         
-    p = Path(src) if Path(src).is_absolute() else (_BASE_DIR / src)
-    try:
-        if p.exists(): return _b64_fit_from_path(str(p), w, h)
-    except Exception: pass
+    # 调用路径探测器
+    p = _resolve_path(src)
+    if p:
+        try:
+            return _b64_fit_from_path(str(p), w, h)
+        except Exception: pass
     
+    # 终极兜底
     b64_data = _clean_b64_string(src)
     img = Image.open(BytesIO(base64.b64decode(b64_data))).convert('RGBA')
     return ImageOps.fit(img, (w, h), Image.Resampling.LANCZOS)
