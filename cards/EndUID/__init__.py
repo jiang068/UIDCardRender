@@ -124,33 +124,64 @@ def _looks_like_base64(s: str) -> bool:
 def _b64_img_from_path(p: str) -> Image.Image:
     return Image.open(p).convert('RGBA')
 
-def _b64_img(src: str) -> Image.Image:
-    if not src: raise ValueError('empty src')
-    if _looks_like_base64(src):
-        if ',' in src: src = src.split(',', 1)[1]
-        return Image.open(BytesIO(base64.b64decode(src))).convert('RGBA')
-    p = Path(src) if Path(src).is_absolute() else (_BASE_DIR / src)
-    try:
-        if p.exists(): return _b64_img_from_path(str(p))
-    except Exception: pass
-    if ',' in src: src = src.split(',', 1)[1]
-    return Image.open(BytesIO(base64.b64decode(src))).convert('RGBA')
-
 @lru_cache(maxsize=32)
 def _b64_fit_from_path(p: str, w: int, h: int) -> Image.Image:
     img = Image.open(p).convert('RGBA')
     return ImageOps.fit(img, (w, h), Image.Resampling.LANCZOS)
 
+def _resolve_path(src: str) -> Path | None:
+    """
+    【核心修复】路径探测器
+    兼容前端的后缀欺骗：如果原后缀文件不存在，主动探测同名的 .webp 文件
+    """
+    p = Path(src) if Path(src).is_absolute() else (_BASE_DIR / src)
+    
+    # 1. 先找原文件（比如前端传来的 .png，如果在 Windows 上没删掉，这里就能命中）
+    if p.exists():
+        return p
+        
+    # 2. 如果原文件不在了（Linux 上的大概率情况），尝试把后缀换成 .webp 去找
+    webp_p = p.with_suffix('.webp')
+    if webp_p.exists():
+        return webp_p
+        
+    return None
+
+def _b64_img(src: str) -> Image.Image:
+    if not src: raise ValueError('empty src')
+    
+    if _looks_like_base64(src):
+        if ',' in src: src = src.split(',', 1)[1]
+        return Image.open(BytesIO(base64.b64decode(src))).convert('RGBA')
+        
+    # 调用我们的路径探测器
+    p = _resolve_path(src)
+    if p:
+        try:
+            return _b64_img_from_path(str(p))
+        except Exception: pass
+        
+    # 如果实在找不到，做最后挣扎当成 Base64 处理
+    if ',' in src: src = src.split(',', 1)[1]
+    return Image.open(BytesIO(base64.b64decode(src))).convert('RGBA')
+
+
 def _b64_fit(src: str, w: int, h: int) -> Image.Image:
     if not src: raise ValueError('empty src')
+    
     if _looks_like_base64(src):
         if ',' in src: src = src.split(',', 1)[1]
         img = Image.open(BytesIO(base64.b64decode(src))).convert('RGBA')
         return ImageOps.fit(img, (w, h), Image.Resampling.LANCZOS)
-    p = Path(src) if Path(src).is_absolute() else (_BASE_DIR / src)
-    try:
-        if p.exists(): return _b64_fit_from_path(str(p), w, h)
-    except Exception: pass
+        
+    # 调用我们的路径探测器
+    p = _resolve_path(src)
+    if p:
+        try:
+            return _b64_fit_from_path(str(p), w, h)
+        except Exception: pass
+        
+    # 如果实在找不到，做最后挣扎当成 Base64 处理
     if ',' in src: src = src.split(',', 1)[1]
     img = Image.open(BytesIO(base64.b64decode(src))).convert('RGBA')
     return ImageOps.fit(img, (w, h), Image.Resampling.LANCZOS)
