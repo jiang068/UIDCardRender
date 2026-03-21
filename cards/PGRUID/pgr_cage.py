@@ -1,112 +1,42 @@
-# 战双幻痛囚笼 卡片渲染器 (PIL 极致性能榨干版)
+# 战双幻痛囚笼 卡片渲染器 (PIL 重构精简版)
 
 from __future__ import annotations
-
 import re
 from io import BytesIO
 from bs4 import BeautifulSoup
-from PIL import Image, ImageDraw, ImageChops
+# 【修复】：增加 ImageChops 导入
+from PIL import Image, ImageDraw, ImageOps, ImageChops
 
-# 从同一包内导入统一资源
+# 从统一包中导入所有所需函数
 from . import (
     F14, F16, F20, F22, F24, F26, F28, F30, F44,
     M14, M16, M20, M22, M24, M26, M28, M30, M44,
-    draw_text_mixed, _b64_img, _b64_fit, _round_mask
+    draw_text_mixed, _b64_img, _b64_fit, _round_mask,
+    _ty, _draw_rounded_rect, _draw_h_gradient, _draw_v_gradient,
+    parse_common_header, draw_common_header, draw_title_bar
 )
 
 # --- 尺寸与颜色常量 ---
 W = 1000
 PAD = 40
-INNER_W = W - PAD * 2  # 920
+INNER_W = W - PAD * 2
 
-C_BG_PAGE = (226, 235, 245, 255)    # #e2ebf5
-C_PRIMARY = (24, 107, 181, 255)     # #186bb5
-C_TEXT_DARK = (51, 51, 51, 255)     # #333333
-C_TEXT_GRAY = (102, 102, 102, 255)  # #666666
-C_BG_LIGHT = (240, 246, 250, 255)   # #f0f6fa
-C_BORDER = (210, 224, 235, 255)     # #d2e0eb
-C_ACCENT_RED = (231, 76, 60, 255)   # #e74c3c
-
-def _ty(font, text: str, box_h: int) -> int:
-    bb = font.getbbox(text)
-    return (box_h - (bb[3] - bb[1])) // 2 - bb[1] + 1
-
-def _draw_rounded_rect(canvas: Image.Image, x0: int|float, y0: int|float, x1: int|float, y1: int|float, r: int, fill: tuple):
-    x0, y0, x1, y1 = int(round(x0)), int(round(y0)), int(round(x1)), int(round(y1))
-    w, h = x1 - x0, y1 - y0
-    if w <= 0 or h <= 0: return
-    block = Image.new("RGBA", (w, h), (0, 0, 0, 0))
-    ImageDraw.Draw(block).rounded_rectangle([0, 0, w - 1, h - 1], radius=r, fill=fill)
-    canvas.alpha_composite(block, (x0, y0))
-
-# 【性能黑科技】：2像素插值拉伸法生成垂直渐变，耗时趋近于0
-def _draw_v_gradient(canvas: Image.Image, x0: int|float, y0: int|float, x1: int|float, y1: int|float, top_rgba: tuple, bottom_rgba: tuple, r: int = 0):
-    x0, y0, x1, y1 = int(round(x0)), int(round(y0)), int(round(x1)), int(round(y1))
-    w, h = x1 - x0, y1 - y0
-    if w <= 0 or h <= 0: return
-    
-    # 只建立 1x2 像素的微缩图
-    base = Image.new("RGBA", (1, 2))
-    base.putpixel((0, 0), top_rgba)
-    base.putpixel((0, 1), bottom_rgba)
-    
-    # 强行双线性插值放大，底层 C 代码瞬间生成完美渐变
-    grad = base.resize((w, h), Image.BILINEAR)
-    
-    if r > 0:
-        mask = _round_mask(w, h, r)
-        grad.putalpha(ImageChops.multiply(grad.getchannel('A'), mask))
-    canvas.alpha_composite(grad, (x0, y0))
-
-# 【性能黑科技】：2像素插值拉伸法生成水平渐变，耗时趋近于0
-def _draw_h_gradient(canvas: Image.Image, x0: int|float, y0: int|float, x1: int|float, y1: int|float, left_rgba: tuple, right_rgba: tuple, r: int = 0):
-    x0, y0, x1, y1 = int(round(x0)), int(round(y0)), int(round(x1)), int(round(y1))
-    w, h = x1 - x0, y1 - y0
-    if w <= 0 or h <= 0: return
-    
-    # 只建立 2x1 像素的微缩图
-    base = Image.new("RGBA", (2, 1))
-    base.putpixel((0, 0), left_rgba)
-    base.putpixel((1, 0), right_rgba)
-    
-    # 强行双线性插值放大
-    grad = base.resize((w, h), Image.BILINEAR)
-    
-    if r > 0:
-        mask = _round_mask(w, h, r)
-        grad.putalpha(ImageChops.multiply(grad.getchannel('A'), mask))
-    canvas.alpha_composite(grad, (x0, y0))
+C_BG_PAGE = (226, 235, 245, 255)
+C_PRIMARY = (24, 107, 181, 255)
+C_TEXT_DARK = (51, 51, 51, 255)
+C_TEXT_GRAY = (102, 102, 102, 255)
+C_BG_LIGHT = (240, 246, 250, 255)
+C_BORDER = (210, 224, 235, 255)
+C_ACCENT_RED = (231, 76, 60, 255)
 
 # --- DOM 解析 ---
 def parse_html(html: str) -> dict:
     soup = BeautifulSoup(html, 'lxml')
-    data = {'bosses': []}
+    # 1. 抽取基础公共 Header 数据
+    data = parse_common_header(soup, html)
+    data['bosses'] = []
 
-    # 背景
-    bg_match = re.search(r"background-image:\s*url\(['\"]?(data:[^'\"]+)['\"]?\)", html)
-    data['contentBgB64'] = bg_match.group(1) if bg_match else ""
-
-    # Header
-    h_bg = soup.select_one('.header-bg')
-    data['headerBgB64'] = h_bg['src'] if h_bg and h_bg.has_attr('src') else ""
-    av = soup.select_one('.avatar-img')
-    data['avatarB64'] = av['src'] if av else ""
-    av_box = soup.select_one('.avatar-box')
-    data['avatarBoxB64'] = av_box['src'] if av_box else ""
-    
-    data['roleName'] = soup.select_one('.header-name').get_text(strip=True) if soup.select_one('.header-name') else ""
-    data['rank'] = soup.select_one('.level-val').get_text(strip=True) if soup.select_one('.level-val') else "0"
-    
-    bottom_spans = soup.select('.header-row-bottom span')
-    data['serverName'] = bottom_spans[0].get_text(strip=True) if len(bottom_spans)>0 else ""
-    raw_id = bottom_spans[-1].get_text(strip=True) if len(bottom_spans)>2 else ""
-    data['roleId'] = raw_id.replace("ID:", "").replace("ID", "").strip()
-
-    # Title Bar
-    t_bg = soup.select_one('.section-title-bar img')
-    data['titleBgB64'] = t_bg['src'] if t_bg else ""
-
-    # Summary
+    # 2. 抽取幻痛特有数据
     a_icon = soup.select_one('.area-icon')
     data['areaIconB64'] = a_icon['src'] if a_icon else ""
     data['challengeArea'] = soup.select_one('.summary-info h2').get_text(strip=True) if soup.select_one('.summary-info h2') else ""
@@ -167,14 +97,13 @@ def parse_html(html: str) -> dict:
 
     return data
 
-
 # --- 主渲染逻辑 ---
 def render(html: str) -> bytes:
     data = parse_html(html)
     
     MAX_H = 6000
     canvas = Image.new("RGBA", (W, MAX_H), C_BG_PAGE)
-    if data['contentBgB64']:
+    if data.get('contentBgB64'):
         try:
             bg_img = _b64_img(data['contentBgB64'])
             bg_img = ImageOps.fit(bg_img, (W, MAX_H), Image.LANCZOS)
@@ -184,71 +113,9 @@ def render(html: str) -> bytes:
     d = ImageDraw.Draw(canvas)
     y = PAD
 
-    # --- Header ---
-    H_H = 200
-    h_img = Image.new("RGBA", (INNER_W, H_H), (0,0,0,0))
-    hd = ImageDraw.Draw(h_img)
-    
-    _draw_rounded_rect(h_img, 0, 0, INNER_W, H_H, 8, (20,25,35,255))
-    if data['headerBgB64']:
-        try:
-            hbg = _b64_fit(data['headerBgB64'], INNER_W, H_H)
-            h_img.paste(hbg, (0,0), _round_mask(INNER_W, H_H, 8))
-        except: pass
-
-    av_w, av_h = 170, 170
-    av_x, av_y = 30, (H_H - av_h)//2
-    
-    # 头像框底层
-    if data['avatarBoxB64']:
-        try:
-            abox = _b64_fit(data['avatarBoxB64'], av_w, av_h)
-            h_img.alpha_composite(abox, (av_x, av_y))
-        except: pass
-
-    # 头像顶层
-    if data['avatarB64']:
-        try:
-            aimg = _b64_fit(data['avatarB64'], 120, 120)
-            cmask = Image.new("L", (120, 120), 0)
-            ImageDraw.Draw(cmask).ellipse([0,0,119,119], fill=255)
-            h_img.paste(aimg, (av_x + 25, av_y + 25), cmask)
-        except: pass
-
-    info_x = av_x + av_w + 20
-    draw_text_mixed(hd, (info_x, av_y + 20), data['roleName'], cn_font=F44, en_font=M44, fill=(255,255,255,255))
-    name_w = int(F44.getlength(data['roleName']))
-    
-    rank_x = info_x + name_w + 16
-    rank_val = data['rank']
-    val_w = int(F22.getlength(rank_val))
-    box_w = 64 + val_w + 14 
-    
-    _draw_rounded_rect(h_img, rank_x, av_y + 30, rank_x + box_w, av_y + 65, 4, (25,30,40,204))
-    hd.rounded_rectangle([rank_x, av_y + 30, rank_x + box_w, av_y + 65], radius=4, outline=(80,100,120,153), width=1)
-    draw_text_mixed(hd, (rank_x + 14, av_y + 30 + _ty(F22, "勋阶", 35)), "勋阶", cn_font=F22, en_font=M22, fill=(155,174,194,255))
-    draw_text_mixed(hd, (rank_x + 64, av_y + 30 + _ty(F22, rank_val, 35)), rank_val, cn_font=F22, en_font=M22, fill=(229,141,60,255))
-
-    bottom_y = av_y + 100
-    draw_text_mixed(hd, (info_x, bottom_y), data['serverName'], cn_font=F24, en_font=M24, fill=(140,158,181,255))
-    sw = int(F24.getlength(data['serverName']))
-    draw_text_mixed(hd, (info_x + sw + 4, bottom_y), "|", cn_font=F24, en_font=M24, fill=(74,90,117,255))
-    draw_text_mixed(hd, (info_x + sw + 20, bottom_y), f"ID:{data['roleId']}", cn_font=F24, en_font=M24, fill=(140,158,181,255))
-
-    canvas.alpha_composite(h_img, (PAD, y))
-    y += H_H + 20
-
-    # --- Title Bar ---
-    T_H = 60
-    # 极速渐变调用
-    _draw_v_gradient(canvas, PAD, y, PAD + INNER_W, y + T_H, (24, 45, 75, 255), (15, 25, 45, 255), r=6)
-    if data['titleBgB64']:
-        try:
-            tbg = _b64_fit(data['titleBgB64'], INNER_W, T_H)
-            canvas.paste(tbg, (PAD, y), _round_mask(INNER_W, T_H, 6))
-        except: pass
-    draw_text_mixed(d, (PAD + 24, y + _ty(F26, "幻痛囚笼", T_H)), "幻痛囚笼", cn_font=F26, en_font=M26, fill=(255,255,255,255))
-    y += T_H + 20
+    # --- Header & Title Bar 组件式调用 ---
+    y = draw_common_header(canvas, d, data, PAD, INNER_W, y)
+    y = draw_title_bar(canvas, d, "幻痛囚笼", data.get('titleBgB64', ''), PAD, INNER_W, y)
 
     # --- Summary ---
     S_H = 120
@@ -285,7 +152,8 @@ def render(html: str) -> bytes:
         if boss['iconB64']:
             try:
                 b_icon = _b64_fit(boss['iconB64'], 306, 160)
-                b_img.paste(b_icon, (0, 0))
+                # 【修复】使用 alpha_composite 替代 paste，解决部分透明底导致背景变黑的问题
+                b_img.alpha_composite(b_icon, (0, 0))
                 # 极速横向渐变羽化效果 (左透明，右底色)
                 _draw_h_gradient(b_img, 153, 0, 306, 160, (240, 246, 250, 0), (240, 246, 250, 255))
             except: pass
@@ -303,7 +171,6 @@ def render(html: str) -> bytes:
         draw_text_mixed(bd, (tx - lbl_w, 70), "讨伐总值: ", cn_font=F20, en_font=M20, fill=C_TEXT_GRAY)
         
         if boss['weaknesses']:
-            # 动态计算总宽度，确保整体靠右对齐
             w_total_w = 0
             for w in boss['weaknesses']:
                 w_total_w += 24 + 6 + int(F16.getlength(w['name'])) + 12
@@ -352,7 +219,10 @@ def render(html: str) -> bytes:
                 if char['iconB64']:
                     try:
                         c_img = _b64_fit(char['iconB64'], 140, 140)
-                        b_img.paste(c_img, (tx, by + 16), _round_mask(140, 140, 4))
+                        # 【核心修复】：融合原有 Alpha 通道与圆角 Mask，并使用 alpha_composite 进行透明叠绘
+                        c_alpha = c_img.split()[3] if c_img.mode == "RGBA" else Image.new("L", c_img.size, 255)
+                        c_img.putalpha(ImageChops.multiply(c_alpha, _round_mask(140, 140, 4)))
+                        b_img.alpha_composite(c_img, (tx, by + 16))
                     except: pass
                 bd.rounded_rectangle([tx, by + 16, tx + 140, by + 156], radius=4, outline=(224, 229, 235, 255), width=2)
                 

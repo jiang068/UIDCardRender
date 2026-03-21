@@ -1,17 +1,17 @@
-# PGRUID 更新记录 卡片渲染器 (PIL 极致性能版)
+# PGRUID 更新记录 卡片渲染器 (PIL 重构精简版)
 
 from __future__ import annotations
-
 import re
 from io import BytesIO
 from bs4 import BeautifulSoup
 from PIL import Image, ImageDraw, ImageChops, ImageFilter
 
-# 从同一包内导入统一资源（引入 E28 Emoji 字体）
+# 从统一包内导入统一资源（引入 E28 Emoji 字体）
 from . import (
     F22, F28, E28, get_font, _is_pure_en_num, _is_kr, _is_jp_kana,
     M22, M28,
-    draw_text_mixed, _b64_img, _b64_fit, _round_mask
+    draw_text_mixed, _b64_img, _b64_fit, _round_mask,
+    _ty, _draw_rounded_rect
 )
 
 # 补充加载特殊字号
@@ -29,21 +29,6 @@ C_TEXT = (255, 255, 255, 255)         # #ffffff
 C_SUBTEXT = (139, 139, 139, 255)      # #8b8b8b
 C_CARD_BG = (255, 255, 255, 15)       # rgba(255,255,255,0.06)
 C_CARD_BORDER = (255, 255, 255, 25)   # rgba(255,255,255,0.1)
-
-def _ty(font, text: str, box_h: int) -> int:
-    bb = font.getbbox(text)
-    return (box_h - (bb[3] - bb[1])) // 2 - bb[1] + 1
-
-def _draw_rounded_rect(canvas: Image.Image, x0: int|float, y0: int|float, x1: int|float, y1: int|float, r: int, fill: tuple, outline: tuple=None):
-    x0, y0, x1, y1 = int(round(x0)), int(round(y0)), int(round(x1)), int(round(y1))
-    w, h = x1 - x0, y1 - y0
-    if w <= 0 or h <= 0: return
-    block = Image.new("RGBA", (w, h), (0, 0, 0, 0))
-    d = ImageDraw.Draw(block)
-    d.rounded_rectangle([0, 0, w - 1, h - 1], radius=r, fill=fill)
-    if outline:
-        d.rounded_rectangle([0, 0, w - 1, h - 1], radius=r, outline=outline, width=1)
-    canvas.alpha_composite(block, (x0, y0))
 
 def _get_mixed_text_length(text: str, cn_font, en_font) -> int:
     """高精度计算混合中英文字体的渲染总长度"""
@@ -143,64 +128,54 @@ def render(html: str) -> bytes:
             logo_img = logo_img.resize((200, new_lh), Image.LANCZOS)
             lx = (W - 200) // 2
             
-            # 原生高斯模糊实现 filter: drop-shadow(0 4px 20px rgba(77, 166, 255, 0.2))
             shadow = Image.new("RGBA", logo_img.size, (0,0,0,0))
             shadow_alpha = logo_img.getchannel('A').point(lambda p: p * 0.2)
             shadow.paste((77, 166, 255), (0,0), shadow_alpha)
-            shadow = shadow.filter(ImageFilter.GaussianBlur(10)) # 高斯模糊 10px
+            shadow = shadow.filter(ImageFilter.GaussianBlur(10))
             
-            canvas.alpha_composite(shadow, (lx, y + 4)) # 偏移 4px
+            canvas.alpha_composite(shadow, (lx, y + 4))
             canvas.alpha_composite(logo_img, (lx, y))
             y += new_lh + 16
         except: pass
 
-    # Header Name
     nw = int(F36.getlength("PGRUID"))
     draw_text_mixed(d, ((W - nw)//2, y), "PGRUID", cn_font=F36, en_font=M36, fill=C_TEXT)
     y += 36 + 16
 
-    # Header Title
     tw = int(M22.getlength("UPDATE LOG"))
-    # 手动处理 letter-spacing: 4px
     tx = (W - tw - 4 * 9) // 2
     for char in "UPDATE LOG":
         draw_text_mixed(d, (tx, y), char, cn_font=F22, en_font=M22, fill=C_SUBTEXT)
         tx += int(M22.getlength(char)) + 4
     y += 22 + 24
 
-    # Divider
     d.line([(PAD, y), (W - PAD, y)], fill=(255, 255, 255, 25), width=2)
     y += 24
 
     # --- Log List ---
     for log in data['logs']:
-        # 换行计算
         lines = _wrap_mixed_text(log['text'], text_max_w, F28, M28)
-        text_h = len(lines) * 40 # 每行行高约 40
-        card_h = 14 + 14 + text_h # 上下 padding 14
+        text_h = len(lines) * 40
+        card_h = 14 + 14 + text_h
         
-        # 绘制卡片背景
         _draw_rounded_rect(canvas, PAD, y, PAD + INNER_W, y + card_h, 10, C_CARD_BG, outline=C_CARD_BORDER)
         
-        # 【修改点】Emoji: 直接使用 E28 字体绘制单色 Emoji，不再通过 draw_text_mixed
         if log['emoji']:
             ew = int(E28.getlength(log['emoji']))
             d.text((PAD + 20 + (50 - ew)//2, y + 14 + _ty(E28, log['emoji'], text_h)), log['emoji'], font=E28, fill=C_TEXT)
         
-        # Text
         ty = y + 14 + 6
         for line in lines:
             draw_text_mixed(d, (PAD + 20 + 50 + 16, ty), line, cn_font=F28, en_font=M28, fill=(224, 224, 224, 255))
             ty += 40
             
-        # Index
         idx_str = f"#{log['index']}"
         idx_w = int(M22.getlength(idx_str))
         draw_text_mixed(d, (PAD + INNER_W - 20 - idx_w, y + 14 + _ty(M22, idx_str, text_h)), idx_str, cn_font=F22, en_font=M22, fill=(77, 166, 255, 127))
         
         y += card_h + 10
 
-    y += 20 # 底部留白
+    y += 20
 
     out_rgb = canvas.crop((0, 0, W, y)).convert("RGB")
     buf = BytesIO()

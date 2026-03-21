@@ -25,7 +25,7 @@ _FONT_CN_PATH = _ASSETS_DIR / "H7GBKHeavy.TTF"
 _FONT_MONO_PATH = _ASSETS_DIR / "JetBrainsMono-Medium.ttf"
 _FONT_JP_PATH = _ASSETS_DIR / "NotoSansJP-Medium.ttf" 
 _FONT_KR_PATH = _ASSETS_DIR / "NotoSansKR-Medium.ttf"
-_FONT_EMOJI_PATH = _ASSETS_DIR / "NotoEmoji-Regular.ttf" # 新增 Emoji 字体路径
+_FONT_EMOJI_PATH = _ASSETS_DIR / "NotoEmoji-Regular.ttf"
 
 def get_font(size: int, bold: bool = False, family: Literal['cn', 'mono', 'jp', 'kr', 'emoji'] = 'cn') -> ImageFont.FreeTypeFont:
     candidates: list[str] = []
@@ -57,7 +57,7 @@ for _s in _COMMON_SIZES:
     globals()[f"M{_s}"] = get_font(_s, family='mono')
     globals()[f"J{_s}"] = get_font(_s, family='jp')
     globals()[f"K{_s}"] = get_font(_s, family='kr')
-    globals()[f"E{_s}"] = get_font(_s, family='emoji') # 注入 E 系列 Emoji 字体
+    globals()[f"E{_s}"] = get_font(_s, family='emoji')
 
 def _is_pure_en_num(ch: str) -> bool:
     return 'a' <= ch <= 'z' or 'A' <= ch <= 'Z' or '0' <= ch <= '9'
@@ -74,8 +74,8 @@ def draw_text_mixed(draw: ImageDraw.ImageDraw, xy: tuple, text: str,
                     cn_font: ImageFont.FreeTypeFont | None = None,
                     en_font: ImageFont.FreeTypeFont | None = None,
                     fill=(255, 255, 255, 255)) -> None:
-    if cn_font is None: cn_font = F24
-    if en_font is None: en_font = M24
+    if cn_font is None: cn_font = globals()['F24']
+    if en_font is None: en_font = globals()['M24']
     x, y = xy
 
     f_size_cn = getattr(cn_font, 'size', 24)
@@ -186,6 +186,172 @@ def _round_mask(w: int, h: int, r: int) -> Image.Image:
     ImageDraw.Draw(mask).rounded_rectangle([0, 0, w - 1, h - 1], radius=r, fill=255)
     return mask
 
+
+# ---------- 公共绘图组件 (UI Drawing Helpers) ----------
+def _ty(font, text: str, box_h: int) -> int:
+    bb = font.getbbox(text)
+    return (box_h - (bb[3] - bb[1])) // 2 - bb[1] + 1
+
+def _draw_rounded_rect(canvas: Image.Image, x0: int|float, y0: int|float, x1: int|float, y1: int|float, r: int, fill: tuple, outline=None, width=1):
+    x0, y0, x1, y1 = int(round(x0)), int(round(y0)), int(round(x1)), int(round(y1))
+    w, h = x1 - x0, y1 - y0
+    if w <= 0 or h <= 0: return
+    block = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+    ImageDraw.Draw(block).rounded_rectangle([0, 0, w - 1, h - 1], radius=r, fill=fill, outline=outline, width=width)
+    canvas.alpha_composite(block, (x0, y0))
+
+def _draw_v_gradient(canvas: Image.Image, x0: int|float, y0: int|float, x1: int|float, y1: int|float, top_rgba: tuple, bottom_rgba: tuple, r: int = 0):
+    x0, y0, x1, y1 = int(round(x0)), int(round(y0)), int(round(x1)), int(round(y1))
+    w, h = x1 - x0, y1 - y0
+    if w <= 0 or h <= 0: return
+    base = Image.new("RGBA", (1, 2))
+    base.putpixel((0, 0), top_rgba)
+    base.putpixel((0, 1), bottom_rgba)
+    grad = base.resize((w, h), Image.BILINEAR)
+    if r > 0:
+        mask = _round_mask(w, h, r)
+        grad.putalpha(ImageChops.multiply(grad.getchannel('A'), mask))
+    canvas.alpha_composite(grad, (x0, y0))
+
+def _draw_h_gradient(canvas: Image.Image, x0: int|float, y0: int|float, x1: int|float, y1: int|float, left_rgba: tuple, right_rgba: tuple, r: int = 0):
+    x0, y0, x1, y1 = int(round(x0)), int(round(y0)), int(round(x1)), int(round(y1))
+    w, h = x1 - x0, y1 - y0
+    if w <= 0 or h <= 0: return
+    base = Image.new("RGBA", (2, 1))
+    base.putpixel((0, 0), left_rgba)
+    base.putpixel((1, 0), right_rgba)
+    grad = base.resize((w, h), Image.BILINEAR)
+    if r > 0:
+        mask = _round_mask(w, h, r)
+        grad.putalpha(ImageChops.multiply(grad.getchannel('A'), mask))
+    canvas.alpha_composite(grad, (x0, y0))
+
+def _draw_clipped_rect(canvas: Image.Image, x: int|float, y: int|float, w: int|float, h: int|float, fill: tuple, outline=None, clip_size: int = 12):
+    x, y, w, h = int(round(x)), int(round(y)), int(round(w)), int(round(h))
+    if w <= 0 or h <= 0: return
+    block = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+    d = ImageDraw.Draw(block)
+    points = [
+        (0, 0), (w, 0),
+        (w, h - clip_size), (w - clip_size, h),
+        (0, h)
+    ]
+    d.polygon(points, fill=fill, outline=outline)
+    canvas.alpha_composite(block, (x, y))
+
+def truncate_text(text: str, font, max_w: int) -> str:
+    if font.getlength(text) <= max_w:
+        return text
+    for i in range(len(text)-1, 0, -1):
+        if font.getlength(text[:i] + "...") <= max_w:
+            return text[:i] + "..."
+    return "..."
+
+def _invert_rgba_image(img: Image.Image) -> Image.Image:
+    r, g, b, a = img.split()
+    rgb = Image.merge('RGB', (r, g, b))
+    inv = ImageOps.invert(rgb)
+    ir, ig, ib = inv.split()
+    return Image.merge('RGBA', (ir, ig, ib, a))
+
+
+# ---------- 战双公共 Header 解析与渲染逻辑 ----------
+def parse_common_header(soup, html: str) -> dict:
+    data = {}
+    bg_match = re.search(r"background-image:\s*url\(['\"]?(data:[^'\"]+)['\"]?\)", html)
+    data['contentBgB64'] = bg_match.group(1) if bg_match else ""
+
+    h_bg = soup.select_one('.header-bg')
+    data['headerBgB64'] = h_bg['src'] if h_bg and h_bg.has_attr('src') else ""
+    av = soup.select_one('.avatar-img')
+    data['avatarB64'] = av['src'] if av else ""
+    av_box = soup.select_one('.avatar-box')
+    data['avatarBoxB64'] = av_box['src'] if av_box else ""
+    
+    hn = soup.select_one('.header-name')
+    data['roleName'] = hn.get_text(strip=True) if hn else ""
+    lv = soup.select_one('.level-val')
+    data['rank'] = lv.get_text(strip=True) if lv else "0"
+    
+    bottom_spans = soup.select('.header-row-bottom span')
+    data['serverName'] = bottom_spans[0].get_text(strip=True) if len(bottom_spans)>0 else ""
+    
+    raw_id = bottom_spans[-1].get_text(strip=True) if len(bottom_spans)>2 else ""
+    data['roleId'] = raw_id.replace("ID:", "").replace("ID", "").strip()
+
+    t_bg = soup.select_one('.section-title-bar img')
+    data['titleBgB64'] = t_bg['src'] if t_bg else ""
+    
+    return data
+
+def draw_common_header(canvas: Image.Image, draw: ImageDraw.ImageDraw, data: dict, pad: int, inner_w: int, y: int) -> int:
+    H_H = 200
+    h_img = Image.new("RGBA", (inner_w, H_H), (0,0,0,0))
+    hd = ImageDraw.Draw(h_img)
+    
+    _draw_rounded_rect(h_img, 0, 0, inner_w, H_H, 8, (20,25,35,255))
+    if data.get('headerBgB64'):
+        try:
+            hbg = _b64_fit(data['headerBgB64'], inner_w, H_H)
+            h_img.paste(hbg, (0,0), _round_mask(inner_w, H_H, 8))
+        except: pass
+
+    av_w, av_h = 170, 170
+    av_x, av_y = 30, (H_H - av_h)//2
+    
+    if data.get('avatarBoxB64'):
+        try:
+            abox = _b64_fit(data['avatarBoxB64'], av_w, av_h)
+            h_img.alpha_composite(abox, (av_x, av_y))
+        except: pass
+
+    if data.get('avatarB64'):
+        try:
+            aimg = _b64_fit(data['avatarB64'], 120, 120)
+            cmask = Image.new("L", (120, 120), 0)
+            ImageDraw.Draw(cmask).ellipse([0,0,119,119], fill=255)
+            h_img.paste(aimg, (av_x + 25, av_y + 25), cmask)
+        except: pass
+
+    info_x = av_x + av_w + 20
+    F44, M44 = globals()['F44'], globals()['M44']
+    draw_text_mixed(hd, (info_x, av_y + 20), data.get('roleName', ''), cn_font=F44, en_font=M44, fill=(255,255,255,255))
+    name_w = int(F44.getlength(data.get('roleName', '')))
+    
+    rank_x = info_x + name_w + 16
+    rank_val = data.get('rank', '0')
+    F22, M22 = globals()['F22'], globals()['M22']
+    val_w = int(F22.getlength(rank_val))
+    box_w = 64 + val_w + 14 
+    
+    _draw_rounded_rect(h_img, rank_x, av_y + 30, rank_x + box_w, av_y + 65, 4, (25,30,40,204), outline=(80,100,120,153))
+    draw_text_mixed(hd, (rank_x + 14, av_y + 30 + _ty(F22, "勋阶", 35)), "勋阶", cn_font=F22, en_font=M22, fill=(155,174,194,255))
+    draw_text_mixed(hd, (rank_x + 64, av_y + 30 + _ty(F22, rank_val, 35)), rank_val, cn_font=F22, en_font=M22, fill=(229,141,60,255))
+
+    bottom_y = av_y + 100
+    F24, M24 = globals()['F24'], globals()['M24']
+    draw_text_mixed(hd, (info_x, bottom_y), data.get('serverName', ''), cn_font=F24, en_font=M24, fill=(140,158,181,255))
+    sw = int(F24.getlength(data.get('serverName', '')))
+    draw_text_mixed(hd, (info_x + sw + 4, bottom_y), "|", cn_font=F24, en_font=M24, fill=(74,90,117,255))
+    draw_text_mixed(hd, (info_x + sw + 20, bottom_y), f"ID:{data.get('roleId', '')}", cn_font=F24, en_font=M24, fill=(140,158,181,255))
+
+    canvas.alpha_composite(h_img, (pad, y))
+    return y + H_H + 20
+
+def draw_title_bar(canvas: Image.Image, draw: ImageDraw.ImageDraw, title: str, title_bg_b64: str, pad: int, inner_w: int, y: int) -> int:
+    T_H = 60
+    _draw_v_gradient(canvas, pad, y, pad + inner_w, y + T_H, (24, 45, 75, 255), (15, 25, 45, 255), r=6)
+    if title_bg_b64:
+        try:
+            tbg = _b64_fit(title_bg_b64, inner_w, T_H)
+            canvas.paste(tbg, (pad, y), _round_mask(inner_w, T_H, 6))
+        except: pass
+    F26, M26 = globals()['F26'], globals()['M26']
+    draw_text_mixed(draw, (pad + 24, y + _ty(F26, title, T_H)), title, cn_font=F26, en_font=M26, fill=(255,255,255,255))
+    return y + T_H + 20
+
+
+# ---------- 模块自动注册 ----------
 _here = Path(__file__).parent
 for _mi in pkgutil.iter_modules([str(_here)]):
     _mod = importlib.import_module(f"cards.PGRUID.{_mi.name}")
@@ -193,14 +359,14 @@ for _mi in pkgutil.iter_modules([str(_here)]):
 
 # ---------- HTML → 模块 分流规则 ----------
 _DISPATCH: list[tuple[list[str], str, str]] = [
-    (['战双体力', '日程助手'], 'mr_card', '战双每日'),
+    (['战双体力', '日程助手'], 'pgr_mr_card', '战双每日'),
     (['我的资料', '角色信息'], 'pgr_roleinfo', '战双卡片'),
     (['战双角色面板', '战斗参数'], 'pgr_char_card', '战双角色面板'),
     (['战双幻痛囚笼', '幻痛囚笼'], 'pgr_cage', '战双幻痛囚笼'),
     (['战双纷争战区', '纷争战区'], 'pgr_area', '战双纷争战区'),
     (['战双涂装列表', '角色涂装', '武器涂装'], 'pgr_fashion', '战双涂装列表'),
     (['战双资源看板', '半年资源总览'], 'pgr_resource', '战双资源看板'),
-    (['战双诺曼复兴战', '诺曼复兴战'], 'pgr_stronghold', '战双复兴战'),
+    (['战双诺曼复兴战', '诺曼复兴战'], 'pgr_stronghold', '战双矿区复兴战'),
     (['战双历战映射', '历战映射'], 'pgr_transfinite', '战双历战映射'),
     (['PGRUID 更新记录'], 'pgr_update_log', '战双更新记录'),
 ]
