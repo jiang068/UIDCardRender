@@ -295,8 +295,11 @@ def parse_common_header(soup, html: str) -> dict:
     
     hn = soup.select_one('.header-name')
     data['roleName'] = hn.get_text(strip=True) if hn else ""
+    
+    ll = soup.select_one('.level-label')
+    data['rank_label'] = ll.get_text(strip=True) if ll else "勋阶"
     lv = soup.select_one('.level-val')
-    data['rank'] = lv.get_text(strip=True) if lv else "0"
+    data['rank_val'] = lv.get_text(strip=True) if lv else "0"
     
     bottom_spans = soup.select('.header-row-bottom span')
     data['serverName'] = bottom_spans[0].get_text(strip=True) if len(bottom_spans)>0 else ""
@@ -344,14 +347,24 @@ def draw_common_header(canvas: Image.Image, draw: ImageDraw.ImageDraw, data: dic
     name_w = int(F44.getlength(data.get('roleName', '')))
     
     rank_x = info_x + name_w + 16
-    rank_val = data.get('rank', '0')
+    rank_label = data.get('rank_label', '勋阶')
+    rank_val = data.get('rank_val', '0')
     F22, M22 = globals()['F22'], globals()['M22']
+    
+    # 动态计算 label 和 val 的宽度
+    label_w = int(F22.getlength(rank_label))
     val_w = int(F22.getlength(rank_val))
-    box_w = 64 + val_w + 14 
+    gap = 6 # 对应 HTML CSS 中 .level-label 的 margin-right: 6px
+    
+    # 动态计算外框总宽度: 左 padding + label 宽度 + 间距 + val 宽度 + 右 padding
+    box_w = 14 + label_w + gap + val_w + 14 
     
     _draw_rounded_rect(h_img, rank_x, av_y + 30, rank_x + box_w, av_y + 65, 4, (25,30,40,204), outline=(80,100,120,153))
-    draw_text_mixed(hd, (rank_x + 14, av_y + 30 + _ty(F22, "勋阶", 35)), "勋阶", cn_font=F22, en_font=M22, fill=(155,174,194,255))
-    draw_text_mixed(hd, (rank_x + 64, av_y + 30 + _ty(F22, rank_val, 35)), rank_val, cn_font=F22, en_font=M22, fill=(229,141,60,255))
+    draw_text_mixed(hd, (rank_x + 14, av_y + 30 + _ty(F22, rank_label, 35)), rank_label, cn_font=F22, en_font=M22, fill=(155,174,194,255))
+    
+    # val 的 x 坐标也改为动态计算的起始位置
+    val_x = rank_x + 14 + label_w + gap
+    draw_text_mixed(hd, (val_x, av_y + 30 + _ty(F22, rank_val, 35)), rank_val, cn_font=F22, en_font=M22, fill=(229,141,60,255))
 
     bottom_y = av_y + 100
     F24, M24 = globals()['F24'], globals()['M24']
