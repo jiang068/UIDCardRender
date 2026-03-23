@@ -275,25 +275,24 @@ def clear_image_caches() -> list[str]:
 # 按优先级从上到下匹配，命中即返回，不再继续。
 _DISPATCH: list[tuple[list[str], str, str]] = [
     (['库街区年度航行报告'],        'ww_data_review_card',   '库街区年度航行报告'),
-    (['鸣潮伴行积分', 'COMPANION REWARD SYSTEM'],  'ww_reward_card',    '积分'),
-    (['鸣潮海墟'],                                  'ww_slash_card',     '海墟'),
-    (['鸣潮体力'],                                  'ww_stamina_card',   '体力'),
-    (['鸣潮角色卡片', 'ROVER RESONANCE CARD'],      'ww_role_card',      '角色'),
-    (['鸣潮深塔'],                                  'ww_abyss_card',     '深塔'),
-    (['鸣潮全息战略'],                              'ww_challenge_card', '全息'),
-    (['鸣潮角色别名' ],                   'ww_alias_card',     '别名'),
-    (['鸣潮公告', 'ann-item'],                      'ww_ann_card',       '公告'),
-    (['库洛币','coin-icon'],                                    'ww_bbs_coin',       '库洛币'),
-    (['鸣潮探索度', 'SOLARIS EXPEDITION RECORD'],   'ww_explore_card',   '探索度'),
-    (['Wuthering Waves Tower Wiki'],                'ww_challenge_wiki', '深塔图鉴'),
-    (['Wuthering Waves Character Wiki'],            'ww_char_wiki',      '角色百科'),
-    (['Wuthering Waves Item Wiki'],                 'ww_item_wiki',      '物品图鉴'),
-    (['Wuthering Waves List Wiki', 'weapon-types-row'], 'ww_list_wiki',  '列表图鉴'),
-    (['Wuthering Waves Matrix Wiki'],               'ww_matrix_card',    '深境矩阵'),
-    (['Wuthering Waves Slash Wiki'],                'ww_slash_wiki',     '深渊深境'),
-
+    (['鸣潮伴行积分', 'COMPANION REWARD SYSTEM'],  'ww_reward_card',    '鸣潮积分'),
+    (['鸣潮海墟'],                                  'ww_slash_card',     '鸣潮海墟'),
+    (['鸣潮体力'],                                  'ww_stamina_card',   '鸣潮体力'),
+    (['鸣潮角色卡片', 'ROVER RESONANCE CARD'],      'ww_role_card',      '鸣潮角色'),
+    (['鸣潮深塔'],                                  'ww_abyss_card',     '鸣潮深塔'),
+    (['鸣潮全息战略'],                              'ww_challenge_card', '鸣潮全息'),
+    (['鸣潮角色别名' ],                   'ww_alias_card',     '鸣潮别名'),
+    (['鸣潮公告', 'ann-item'],                      'ww_ann_card',       '鸣潮公告'),
+    (['库洛币','coin-icon'],                                    'ww_bbs_coin',       '库街区库洛币'),
+    (['鸣潮探索度', 'SOLARIS EXPEDITION RECORD'],   'ww_explore_card',   '鸣潮探索度'),
+    (['Wuthering Waves Tower Wiki'],                'ww_challenge_wiki', '鸣潮深塔图鉴'),
+    (['Wuthering Waves Character Wiki'],            'ww_char_wiki',      '鸣潮角色百科'),
+    (['Wuthering Waves Item Wiki'],                 'ww_item_wiki',      '鸣潮物品图鉴'),
+    (['Wuthering Waves List Wiki', 'weapon-types-row'], 'ww_list_wiki',  '鸣潮列表图鉴'),
+    (['Wuthering Waves Matrix Wiki'],               'ww_matrix_card',    '鸣潮深境矩阵'),
+    (['Wuthering Waves Slash Wiki'],                'ww_slash_wiki',     '鸣潮深渊深境'),
+    (['签到日历', '月累计签到'], 'ww_sign_calendar', '库街区签到日历'),
 ]
-
 
 def render(html: str) -> bytes | None:
     """根据 HTML 内容特征分派到对应卡片渲染器。

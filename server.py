@@ -4,6 +4,7 @@ import os
 import logging
 import gzip
 import gc
+import time  # 【新增】导入 time 模块用于高精度计时
 from concurrent.futures import ThreadPoolExecutor
 from aiohttp import web
 
@@ -36,6 +37,9 @@ async def render_handler(request: web.Request) -> web.Response:
     纯内存数据流转，零磁盘 I/O 消耗。
     采用“阅后即焚”策略，及时销毁中间变量以节省内存。
     """
+    # 【新增】记录请求刚到达时的精确时间点
+    start_time = time.perf_counter() 
+
     try:
         # 1. 直接读取到内存 (抛弃慢速的硬盘 tmp 临时文件)
         body_bytes = await request.read()
@@ -64,12 +68,18 @@ async def render_handler(request: web.Request) -> web.Response:
         loop = asyncio.get_running_loop()
         img_bytes = await loop.run_in_executor(request.app['pool'], _render_html, html)
 
+        # 【新增】计算总耗时（毫秒），并打印到日志
+        elapsed_ms = (time.perf_counter() - start_time) * 1000
+        unicon_logger.info(f"Render completed in {elapsed_ms:.2f} ms")
+
         return web.Response(body=img_bytes, content_type='image/jpeg')
 
     except web.HTTPException:
         raise
     except Exception as e:
-        unicon_logger.error(f"Render error: {e}", exc_info=True)
+        # 如果渲染报错，也可以顺便记录一下报错前花了多长时间
+        elapsed_ms = (time.perf_counter() - start_time) * 1000
+        unicon_logger.error(f"Render failed after {elapsed_ms:.2f} ms: {e}", exc_info=True)
         return web.json_response({'error': str(e)}, status=500)
 
 
