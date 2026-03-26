@@ -289,8 +289,9 @@ _DISPATCH: list[tuple[list[str], str, str]] = [
     (['Wuthering Waves Character Wiki'],            'ww_char_wiki',      '鸣潮角色百科'),
     (['Wuthering Waves Item Wiki'],                 'ww_item_wiki',      '鸣潮物品图鉴'),
     (['Wuthering Waves List Wiki', 'weapon-types-row'], 'ww_list_wiki',  '鸣潮列表图鉴'),
-    (['Wuthering Waves Matrix Wiki'],               'ww_matrix_card',    '鸣潮深境矩阵'),
+    (['Wuthering Waves Matrix Wiki'],               'ww_matrix_wiki',    '鸣潮深境矩阵'),
     (['Wuthering Waves Slash Wiki'],                'ww_slash_wiki',     '鸣潮深渊深境'),
+    (['终焉矩阵', 'MATRIX REPORT'], 'ww_matrix_card', '鸣潮终焉矩阵'),
     (['签到日历', '月累计签到'], 'ww_sign_calendar', '库街区签到日历'),
 ]
 
