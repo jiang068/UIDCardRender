@@ -135,8 +135,13 @@ def parse_html(html: str) -> dict:
 
             for tm in sec.select('.team-item'):
                 team = {'roles': []}
-                team['round'] = tm.select_one('.round-area span').get_text(strip=True) if tm.select_one('.round-area span') else "1"
-                team['pass_boss'] = tm.select_one('.boss-count').get_text(strip=True) if tm.select_one('.boss-count') else "0"
+                # 【修复安全提取轮次】
+                round_span = tm.select_one('.round-area span')
+                team['round'] = round_span.get_text(strip=True) if round_span else "1"
+                
+                boss_count = tm.select_one('.boss-count')
+                team['pass_boss'] = boss_count.get_text(strip=True) if boss_count else "0"
+                
                 total_node = tm.select_one('.boss-total')
                 team['boss_total'] = total_node.get_text(strip=True).replace('/', '') if total_node else "0"
                 
@@ -303,11 +308,9 @@ def render(html: str) -> bytes:
                 except: pass
             _draw_h_gradient(ov_sandbox, 0, 0, ov_w, ov_h, (10, 14, 18, 51), (10, 14, 18, 128), r=10)
             
-            # 还原超大图左侧溢出遮罩效果
             if mode['rank_detail_url']:
                 try:
                     rimg = _b64_img(mode['rank_detail_url']).resize((400, 400), Image.Resampling.LANCZOS)
-                    # HTML 逻辑: Y中心对齐(150/2 - 400/2 = -125), X 偏移 -80px
                     ov_sandbox.alpha_composite(rimg, (-80, -125))
                 except: pass
             
@@ -330,8 +333,6 @@ def render(html: str) -> bytes:
                 fill_w = int(bar_w * mode['progress_pct'] / 100)
                 _draw_h_gradient(ov_sandbox, bar_x, 124, bar_x + fill_w, 132, (212, 177, 99, 255), (255, 243, 185, 255), r=4)
             
-            # 将组装好的 overview 贴回主图 (完美保留圆角与截断效果)
-            # 因为带有透明区域，所以使用 alpha_composite 贴图
             ov_final = Image.new("RGBA", (ov_w, ov_h), (0,0,0,0))
             ov_final.paste(ov_sandbox, (0,0), _round_mask(ov_w, ov_h, 10))
             canvas.alpha_composite(ov_final, (PAD + 14, ov_y))
@@ -346,8 +347,9 @@ def render(html: str) -> bytes:
                 _draw_rounded_rect(tm_box, 0, 0, tm_w, tm_h, 8, (30, 42, 55, 165), outline=(255, 255, 255, 15))
                 _draw_h_gradient(tm_box, 0, 0, 3, tm_h, (212, 177, 99, 128), (212, 177, 99, 0), r=2)
                 
-                # Index
-                draw_text_mixed(td, (24, 34), f"{team['round']:02d}", f_en(34), f_en(34), fill=(255, 255, 255, 255))
+                # 【核心修复】安全格式化字符补齐轮次
+                round_str = str(team['round']).zfill(2)
+                draw_text_mixed(td, (24, 34), round_str, f_en(34), f_en(34), fill=(255, 255, 255, 255))
                 
                 # Fake Arrow Line
                 td.line([(86, 45), (96, 55), (86, 65)], fill=(255,255,255, 90), width=2, joint="curve")
@@ -372,7 +374,7 @@ def render(html: str) -> bytes:
                         _draw_h_gradient(tm_box, rx + 88 - cw - 12, 99 - 22, rx + 88, 99 - 2, (0, 0, 0, 0), (0, 0, 0, 230))
                         td.line([(rx + 88 - 2, 99 - 22), (rx + 88 - 2, 99 - 2)], fill=c_col, width=2)
                         draw_text_mixed(td, (rx + 88 - cw - 6, 99 - 20), role['chain_name'], f_cn(14), f_en(14), fill=c_col)
-                    rx += 118 # 88 width + 30 gap
+                    rx += 118
 
                 # Divider & Buff/Boss
                 dx = tm_w - 350
@@ -431,19 +433,16 @@ def render(html: str) -> bytes:
                 if i > 0:
                     d.line([(PAD + 28, cy), (PAD + INNER_W - 28, cy)], fill=(255, 255, 255, 10), width=1)
                 
-                # 90px Rank Img
                 if mode['rank_img_url']:
                     try:
                         rimg = _b64_fit(mode['rank_img_url'], 90, 90)
                         canvas.alpha_composite(rimg, (PAD + 28, cy + 24))
                     except: pass
                 
-                # Texts
                 draw_text_mixed(d, (PAD + 138, cy + 50), mode['mode_name'], f_cn(32), f_en(32), fill=(212, 177, 99, 255))
                 mw = _calc_mixed_w(mode['mode_name'], f_cn(32), f_en(32))
                 draw_text_mixed(d, (PAD + 138 + mw + 14, cy + 40), mode['score'], f_en(50), f_en(50), fill=(212, 177, 99, 255))
                 
-                # Right Rewards
                 rw_w = _calc_mixed_w(mode['reward_text'], f_cn(32), f_en(32))
                 tx = PAD + INNER_W - 28 - rw_w
                 draw_text_mixed(d, (tx, cy + 50), mode['reward_text'], f_cn(32), f_en(32), fill=(212, 177, 99, 255))
@@ -461,7 +460,7 @@ def render(html: str) -> bytes:
     # --------------------------------------------------
     # 底部 Footer 输出
     # --------------------------------------------------
-    y -= 10 # 还原 Footer 负边距重叠
+    y -= 10
     if data['footer_b64']:
         try:
             ft = _b64_img(data['footer_b64'])
@@ -472,10 +471,9 @@ def render(html: str) -> bytes:
             y += ft.height
         except: pass
 
-    y -= 20 # 还原 bottom 负边界
+    y -= 20
     FINAL_PAD = 40 
     
-    # 获取真实高度并裁切
     out_rgb = canvas.crop((0, 0, W, y + FINAL_PAD)).convert('RGB')
     buf = BytesIO()
     out_rgb.save(buf, format='JPEG', quality=92, optimize=True)
