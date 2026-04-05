@@ -1,8 +1,8 @@
-# 明日方舟：终末地 角色图鉴(Wiki)卡片渲染器 (PIL 版)
-
+# cards/EndUID/end_wiki_char.py
 from __future__ import annotations
 
 import math
+import re
 from io import BytesIO
 
 from bs4 import BeautifulSoup
@@ -10,7 +10,7 @@ from PIL import Image, ImageDraw, ImageFilter, ImageChops
 
 # 避免循环导入，直接引入工具函数并局部生成字体
 from . import (
-    get_font, draw_text_mixed, _b64_img, _b64_fit,
+    get_font, draw_text_mixed, _b64_img, _b64_fit, _round_mask,
     F12, F14, F15, F16, F18, F20, F24, F28, F96,
     M12, M14, M16,
     O14, O18, O20, O24
@@ -27,6 +27,29 @@ C_ACCENT = (255, 230, 0, 255)
 C_TEXT = (255, 255, 255, 255)
 C_SUBTEXT = (139, 139, 139, 255)
 C_CARD_BG = (20, 21, 24, 204)  # rgba(20,21,24,0.8)
+
+
+def _is_pure_en_num(ch: str) -> bool:
+    return 'a' <= ch <= 'z' or 'A' <= ch <= 'Z' or '0' <= ch <= '9' or ch in ' _-//:.'
+
+def _draw_rounded_rect(canvas: Image.Image, x0: int, y0: int, x1: int, y1: int, r: int, fill: tuple, outline: tuple = None, width: int = 1):
+    w, h = x1 - x0, y1 - y0
+    if w <= 0 or h <= 0: return
+    block = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+    ImageDraw.Draw(block).rounded_rectangle([0, 0, w - 1, h - 1], radius=r, fill=fill, outline=outline, width=width)
+    canvas.alpha_composite(block, (x0, y0))
+
+def _draw_h_gradient(canvas: Image.Image, x0: int, y0: int, x1: int, y1: int, left_rgba: tuple, right_rgba: tuple, r: int = 0):
+    w, h = x1 - x0, y1 - y0
+    if w <= 0 or h <= 0: return
+    base = Image.new("RGBA", (2, 1))
+    base.putpixel((0, 0), left_rgba)
+    base.putpixel((1, 0), right_rgba)
+    grad = base.resize((w, h), Image.Resampling.BILINEAR)
+    if r > 0:
+        mask = _round_mask(w, h, r)
+        grad.putalpha(ImageChops.multiply(grad.getchannel('A'), mask))
+    canvas.alpha_composite(grad, (x0, y0))
 
 
 def parse_html(html: str) -> dict:
@@ -73,12 +96,11 @@ def parse_html(html: str) -> dict:
         if "FACTION" in lbl: data["info"]["faction"] = val
         elif "RACE" in lbl: data["info"]["race"] = val
         elif "DATE" in lbl: data["info"]["date"] = val
-        elif "SPECIALTIES" in lbl: data["info"]["specialties"] = val
+        elif "BIRTHDAY" in lbl: data["info"]["birthday"] = val
 
     # Stats Table
     stats_rows = soup.select(".stats-table tr")
     if len(stats_rows) > 1:
-        # skip header
         for r in stats_rows[1:]:
             cols = r.select("td")
             if len(cols) == 8:
@@ -93,7 +115,7 @@ def parse_html(html: str) -> dict:
                     "def": cols[7].get_text(strip=True)
                 })
 
-    # Content Sections (Talents, Skills, Base, Potentials)
+    # Content Sections
     for section in soup.select(".scroll-content > div"):
         st = section.select_one(".section-title")
         if not st: continue
@@ -110,10 +132,34 @@ def parse_html(html: str) -> dict:
                 data["talents"].append({"name": t_name, "effects": effs})
 
         elif "SKILLS" in sec_title and "BASE" not in sec_title:
-            for card in section.select(".feature-card"):
-                s_name = card.select_one(".feature-name").get_text(strip=True) if card.select_one(".feature-name") else ""
-                desc = card.select_one(".feature-desc").get_text(strip=True) if card.select_one(".feature-desc") else ""
-                data["skills"].append({"name": s_name, "desc": desc})
+            for sc in section.select(".skill-card"):
+                icon_el = sc.select_one(".skill-icon")
+                s_name = sc.select_one(".skill-name").get_text(strip=True) if sc.select_one(".skill-name") else ""
+                badge_el = sc.select_one(".skill-type-badge")
+                desc_el = sc.select_one(".skill-desc-text")
+                
+                skill_data = {
+                    "name": s_name,
+                    "icon": icon_el.get("src", "") if icon_el else "",
+                    "badge": badge_el.get_text(strip=True) if badge_el else "",
+                    "badge_cls": badge_el.get("class", []) if badge_el else [],
+                    "desc": desc_el.get_text(strip=True) if desc_el else "",
+                    "headers": [],
+                    "rows": []
+                }
+                
+                stats_table = sc.select_one(".skill-stats")
+                if stats_table:
+                    trs = stats_table.select("tr")
+                    if trs:
+                        for th in trs[0].select("th"):
+                            skill_data["headers"].append({"text": th.get_text(strip=True), "mastery": "mastery" in th.get("class", [])})
+                        for tr in trs[1:]:
+                            row_cols = []
+                            for td in tr.select("td"):
+                                row_cols.append({"text": td.get_text(strip=True), "mastery": "mastery" in td.get("class", [])})
+                            skill_data["rows"].append(row_cols)
+                data["skills"].append(skill_data)
 
         elif "BASE SKILLS" in sec_title:
             for bs_row in section.select(".feature-card > div"):
@@ -132,42 +178,19 @@ def parse_html(html: str) -> dict:
 
 
 def draw_bg(canvas: Image.Image, w: int, h: int, bg_src: str):
-    sw, sh = w // 10, h // 10
-    cx, cy = int(sw * 0.7), int(sh * 0.3)
-    grad = Image.new("RGBA", (sw, sh), (0, 0, 0, 0))
-    max_dist = math.hypot(max(cx, sw - cx), max(cy, sh - cy))
-    
-    for y in range(sh):
-        for x in range(sw):
-            dist = math.hypot(x - cx, y - cy)
-            ratio = min(dist / max_dist, 1.0)
-            r = int(34 + (15 - 34) * ratio)
-            g = int(35 + (16 - 35) * ratio)
-            b = int(40 + (20 - 40) * ratio)
-            grad.putpixel((x, y), (r, g, b, 255))
-    canvas.alpha_composite(grad.resize((w, h), Image.Resampling.LANCZOS))
+    # 【修改】：使用简单的从深灰色到黑色的垂直渐变，不再绘制网格
+    base = Image.new("RGBA", (1, 2))
+    base.putpixel((0, 0), (45, 45, 50, 255))  # 深灰色
+    base.putpixel((0, 1), (8, 8, 10, 255))    # 黑色
+    grad = base.resize((w, h), Image.Resampling.BILINEAR)
+    canvas.alpha_composite(grad, (0, 0))
     
     if bg_src:
         try:
             bg_img = _b64_fit(bg_src, w, h).convert("RGBA")
-            bg_img.putalpha(Image.new("L", (w, h), 25)) # opacity ~0.1
+            bg_img.putalpha(Image.new("L", (w, h), 38)) # 0.15 opacity
             canvas.alpha_composite(bg_img)
         except Exception: pass
-
-    grid = Image.new("RGBA", (w, h), (0, 0, 0, 0))
-    gd = ImageDraw.Draw(grid)
-    grid_c = (38, 39, 44, 180)
-    for x in range(0, w, 60): gd.line([(x, 0), (x, h)], fill=grid_c, width=1)
-    for y in range(0, h, 60): gd.line([(0, y), (w, y)], fill=grid_c, width=1)
-    
-    mask = Image.new("L", (w, h), 255)
-    md = ImageDraw.Draw(mask)
-    fade_h = int(h * 0.2)
-    for y in range(fade_h, h):
-        alpha = int(255 * (1 - min((y - fade_h) / (h * 0.8), 1.0)))
-        md.line([(0, y), (w, y)], fill=alpha)
-    grid.putalpha(mask)
-    canvas.alpha_composite(grid)
 
 
 def wrap_text(text: str, font, max_width: int) -> list[str]:
@@ -186,9 +209,9 @@ def wrap_text(text: str, font, max_width: int) -> list[str]:
 
 def draw_skew_tag(canvas: Image.Image, d: ImageDraw.ImageDraw, x: int, y: int, icon_src: str, text: str, is_element: bool) -> int:
     h = 32
-    tw = int(M14.getlength(text))
+    tw = int(M14.getlength(text)) if _is_pure_en_num(text) else int(F14.getlength(text))
     w = tw + 32 + (24 if icon_src else 0)
-    skew = 10
+    skew = 12
     
     bg_c = (184, 45, 34, 255) if is_element else (255, 255, 255, 20)
     text_c = (255, 255, 255, 255) if is_element else (238, 238, 238, 255)
@@ -196,9 +219,9 @@ def draw_skew_tag(canvas: Image.Image, d: ImageDraw.ImageDraw, x: int, y: int, i
     pts = [(x + skew, y), (x + w + skew, y), (x + w - skew, y + h), (x - skew, y + h)]
     
     shadow = Image.new("RGBA", (W, 100), (0,0,0,0))
-    ImageDraw.Draw(shadow).polygon([(p[0]+3, 30+3) for p in pts], fill=(0,0,0,102))
+    ImageDraw.Draw(shadow).polygon([(p[0]+2, p[1]-y+2) for p in pts], fill=(0,0,0,102))
     shadow = shadow.filter(ImageFilter.GaussianBlur(3))
-    canvas.alpha_composite(shadow, (0, y - 30))
+    canvas.alpha_composite(shadow, (0, y))
     
     d.polygon(pts, fill=bg_c)
     if not is_element:
@@ -212,8 +235,7 @@ def draw_skew_tag(canvas: Image.Image, d: ImageDraw.ImageDraw, x: int, y: int, i
             ix += 24
         except Exception: pass
         
-    # [修正] 基线补偿 y+8 -> y+8-4
-    draw_text_mixed(d, (ix, y + 4), text, cn_font=F14, en_font=M14, fill=text_c)
+    draw_text_mixed(d, (ix, y + 6), text, cn_font=F14, en_font=M14, fill=text_c)
     return w + 12
 
 
@@ -224,50 +246,57 @@ def render(html: str) -> bytes:
     cur_y = PAD
     
     # Header Area
-    cur_y += 100 + 35 + 40 # name + stars + tags + info grid
-    cur_y += 85 * 2 # info grid 2 rows approx
+    cur_y += 100 + 35 + 40 # name + stars + tags 
+    cur_y += 85 * 2 # info grid 2x2
     cur_y += 20 # scroll content top margin
     
     # Text height factors
-    desc_f = F15
     desc_lh = int(15 * 1.5)
     
     # Stats Table
     if data["stats"]:
-        cur_y += 45 + 15 # title
-        cur_y += 38 + len(data["stats"]) * 40 # table header + rows
+        cur_y += 45 + 15
+        cur_y += 38 + len(data["stats"]) * 40
         cur_y += 30
         
     # Talents
     if data["talents"]:
         cur_y += 45 + 15
         for t in data["talents"]:
-            cur_y += 30 + 5 # name margin
+            cur_y += 30 + 5
             for eff in t["effects"]:
                 if eff["desc"]:
-                    cur_y += 24 # badge
-                    lines = wrap_text(eff["desc"], desc_f, INNER_W - 30)
+                    cur_y += 24
+                    lines = wrap_text(eff["desc"], F15, INNER_W - 30)
                     cur_y += len(lines) * desc_lh + 8
-            cur_y += 30 # card padding/margin
+            cur_y += 30
         cur_y += 20
         
     # Skills
     if data["skills"]:
         cur_y += 45 + 15
         for s in data["skills"]:
-            cur_y += 30 + 5
-            lines = wrap_text(s["desc"], desc_f, INNER_W - 30)
-            cur_y += len(lines) * desc_lh + 30
+            lines = wrap_text(s["desc"], F14, INNER_W - 56 - 14 - 40) if s["desc"] else []
+            meta_h = 22 + (4 + len(lines) * desc_lh if lines else 0)
+            header_h = 32 + max(56, meta_h)
+            
+            body_h = 0
+            if s["headers"]:
+                body_h += 32
+                body_h += 24
+                body_h += len(s["rows"]) * 24
+                
+            skill_card_h = header_h + body_h # 【修复】：变量名改为 skill_card_h 防止覆盖全局 total_h
+            cur_y += skill_card_h + 20
         cur_y += 20
         
     # Base Skills
     if data["base_skills"]:
         cur_y += 45 + 15
-        cur_y += 30 # card pad
+        cur_y += 30 
         for bs in data["base_skills"]:
-            # layout: 120px for name, remaining for desc
-            lines = wrap_text(bs["desc"], desc_f, INNER_W - 30 - 140)
-            cur_y += max(24, len(lines) * desc_lh) + 14
+            lines = wrap_text(bs["desc"], F14, INNER_W - 30 - 140)
+            cur_y += max(20, len(lines) * desc_lh) + 14
         cur_y += 30
         
     # Potentials
@@ -275,9 +304,8 @@ def render(html: str) -> bytes:
         cur_y += 45 + 15
         cur_y += 30
         for p in data["potentials"]:
-            cur_y += 24 + 4 # name
-            lines = wrap_text(p["desc"], desc_f, INNER_W - 30 - 55)
-            cur_y += len(lines) * desc_lh + 25 # pb
+            lines = wrap_text(p["desc"], F15, INNER_W - 30 - 55)
+            cur_y += 28 + len(lines) * desc_lh + 12
         cur_y += 30
 
     # Footer
@@ -288,7 +316,7 @@ def render(html: str) -> bytes:
     canvas = Image.new("RGBA", (W, total_h), C_BG)
     draw_bg(canvas, W, total_h, data["bg"])
     
-    # 角色大立绘
+    # 角色大立绘 & 褪色遮罩
     if data["char_img"]:
         try:
             char_img = _b64_img(data["char_img"])
@@ -299,20 +327,19 @@ def render(html: str) -> bytes:
             cw, ch = int(cw * scale), int(ch * scale)
             char_img = char_img.resize((cw, ch), Image.Resampling.LANCZOS)
             
-            # 立绘渐变遮罩
             mask = Image.new("L", (cw, ch), 255)
-            md = ImageDraw.Draw(mask)
-            for x in range(cw):
-                if x < cw * 0.25:
-                    alpha = int(255 * (x / (cw * 0.25)))
-                    for y in range(ch): mask.putpixel((x, y), alpha)
-            for y in range(ch):
-                if y > ch * 0.7:
-                    alpha = int(255 * (1 - (y - ch * 0.7) / (ch * 0.3)))
-                    for x in range(cw): 
-                        curr_a = mask.getpixel((x, y))
-                        mask.putpixel((x, y), min(curr_a, alpha))
-                        
+            fade_x = int(cw * 0.25)
+            for x in range(fade_x):
+                alpha = int(255 * (x / fade_x))
+                for y in range(ch): mask.putpixel((x, y), alpha)
+                
+            fade_y = int(ch * 0.7)
+            for y in range(fade_y, ch):
+                alpha_y = int(255 * (1 - (y - fade_y) / (ch - fade_y)))
+                for x in range(cw): 
+                    curr_a = mask.getpixel((x, y))
+                    mask.putpixel((x, y), min(curr_a, alpha_y))
+                    
             char_img.putalpha(ImageChops.multiply(char_img.split()[3], mask))
             
             shadow = Image.new("RGBA", (cw, ch), (0, 0, 0, 0))
@@ -329,18 +356,15 @@ def render(html: str) -> bytes:
     y = PAD
     
     # === Header Group ===
-    # [修正] 基线补偿 F96 -> y-10-28
     draw_text_mixed(d, (PAD - 4, y - 38), data["name"], cn_font=F96, en_font=F96, fill=C_TEXT)
     y += 90
     
-    # Stars [修正] 往上挪 9px
     for i in range(data["rarity"]):
         cx = PAD + i * 26
         d.ellipse([cx, y-5, cx + 18, y + 13], fill=C_ACCENT)
         d.ellipse([cx + 3, y - 2, cx + 15, y + 10], fill=(255, 204, 0, 255))
     y += 35
     
-    # Tags
     tx = PAD
     if data["property"]: tx += draw_skew_tag(canvas, d, tx, y, data["property_icon"], data["property"], True)
     if data["profession"]: tx += draw_skew_tag(canvas, d, tx, y, data["profession_icon"], data["profession"], False)
@@ -355,57 +379,25 @@ def render(html: str) -> bytes:
         ("阵营 / FACTION", data["info"].get("faction", "UNKNOWN")),
         ("种族 / RACE", data["info"].get("race", "UNKNOWN")),
         ("实装 / DATE", data["info"].get("date", "-")),
-        ("专长 / SPECIALTIES", data["info"].get("specialties", "-"))
+        ("生日 / BIRTHDAY", data["info"].get("birthday", "-"))
     ]
     for i, (lbl, val) in enumerate(info_items):
         r, c = divmod(i, info_cols)
         ix = PAD + c * (info_w + info_gap)
         iy = y + r * (58 + info_gap)
         d.rectangle([ix, iy, ix + info_w, iy + 58], fill=C_CARD_BG, outline=(255,255,255,25), width=1)
-        # [修正] 基线补偿 M12 -> iy+10-4
         draw_text_mixed(d, (ix + 15, iy + 6), lbl, cn_font=F12, en_font=M12, fill=C_SUBTEXT)
-        f_val = F16 if "专长" in lbl else F18
-        # [修正] 基线补偿 iy+30-5
+        f_val = F18
         draw_text_mixed(d, (ix + 15, iy + 25), val, cn_font=f_val, en_font=f_val, fill=C_TEXT)
     y += 2 * (58 + info_gap) + 20
 
     def draw_section_title(title_cn, title_en):
         d.rectangle([PAD, y + 2, PAD + 6, y + 28], fill=C_ACCENT)
-        # [修正] 基线补偿 F28 -> y-2-8
         draw_text_mixed(d, (PAD + 15, y - 10), title_cn, cn_font=F28, en_font=F28, fill=C_ACCENT)
         cn_w = int(F28.getlength(title_cn))
-        # [修正] 基线补偿 M16 -> y+8-5
         draw_text_mixed(d, (PAD + 15 + cn_w + 12, y + 3), title_en, cn_font=F16, en_font=M16, fill=C_SUBTEXT)
         d.line([(PAD, y + 35), (W - PAD, y + 35)], fill=(255, 255, 255, 25), width=2)
         return y + 50
-
-    # === Stats Table ===
-    if data["stats"]:
-        y = draw_section_title("基础属性", "STATS")
-        
-        # Table Header
-        col_w = INNER_W // 8
-        headers = ["LV", "STR", "AGI", "INT", "WIL", "ATK", "HP", "DEF"]
-        d.rectangle([PAD, y, W - PAD, y + 38], fill=C_CARD_BG)
-        d.line([(PAD, y + 38), (W - PAD, y + 38)], fill=(255, 255, 255, 25), width=1)
-        for i, h_txt in enumerate(headers):
-            hw = int(O14.getlength(h_txt))
-            # [修正] 基线补偿 O14 -> y+10-4
-            draw_text_mixed(d, (PAD + i * col_w + (col_w - hw)//2, y + 6), h_txt, cn_font=F14, en_font=O14, fill=C_ACCENT)
-        y += 38
-        
-        # Table Rows
-        for r_data in data["stats"]:
-            d.rectangle([PAD, y, W - PAD, y + 40], fill=C_CARD_BG)
-            d.line([(PAD, y + 40), (W - PAD, y + 40)], fill=(255, 255, 255, 12), width=1)
-            vals = [r_data["lv"], r_data["str"], r_data["agi"], r_data["int"], r_data["wil"], r_data["atk"], r_data["hp"], r_data["def"]]
-            for i, val in enumerate(vals):
-                vw = int(O20.getlength(val))
-                fc = (136, 136, 136, 255) if i == 0 else C_TEXT
-                # [修正] 基线补偿 O20 -> y+8-6
-                draw_text_mixed(d, (PAD + i * col_w + (col_w - vw)//2, y + 2), val, cn_font=F20, en_font=O20, fill=fc)
-            y += 40
-        y += 30
 
     def draw_feature_card_bg(start_y, ch):
         bg = Image.new("RGBA", (INNER_W, ch))
@@ -416,37 +408,57 @@ def render(html: str) -> bytes:
         canvas.alpha_composite(bg, (PAD, start_y))
         d.line([(PAD, start_y), (PAD, start_y + ch)], fill=(68, 68, 68, 255), width=4)
 
+    # === Stats Table ===
+    if data["stats"]:
+        y = draw_section_title("基础属性", "STATS")
+        col_w = INNER_W // 8
+        headers = ["LV", "STR", "AGI", "INT", "WIL", "ATK", "HP", "DEF"]
+        d.rectangle([PAD, y, W - PAD, y + 38], fill=C_CARD_BG)
+        d.line([(PAD, y + 38), (W - PAD, y + 38)], fill=(255, 255, 255, 25), width=1)
+        for i, h_txt in enumerate(headers):
+            hw = int(O14.getlength(h_txt))
+            draw_text_mixed(d, (PAD + i * col_w + (col_w - hw)//2, y + 6), h_txt, cn_font=F14, en_font=O14, fill=C_ACCENT)
+        y += 38
+        
+        for r_data in data["stats"]:
+            d.rectangle([PAD, y, W - PAD, y + 40], fill=C_CARD_BG)
+            d.line([(PAD, y + 40), (W - PAD, y + 40)], fill=(255, 255, 255, 12), width=1)
+            vals = [r_data["lv"], r_data["str"], r_data["agi"], r_data["int"], r_data["wil"], r_data["atk"], r_data["hp"], r_data["def"]]
+            for i, val in enumerate(vals):
+                vw = int(O20.getlength(val))
+                fc = (136, 136, 136, 255) if i == 0 else C_TEXT
+                draw_text_mixed(d, (PAD + i * col_w + (col_w - vw)//2, y + 2), val, cn_font=F20, en_font=O20, fill=fc)
+            y += 40
+        y += 30
+
     # === Talents ===
     if data["talents"]:
         y = draw_section_title("天赋", "TALENTS")
         for t in data["talents"]:
             start_y = y
-            ch = 15 + 30 # pad_top + name + mb
+            ch = 15 + 30
             for eff in t["effects"]:
                 if eff["desc"]:
                     ch += 24
                     lines = wrap_text(eff["desc"], F15, INNER_W - 30)
                     ch += len(lines) * desc_lh + 8
-            ch += 5 # pad_bot
+            ch += 5
             
             draw_feature_card_bg(start_y, ch)
             
             ty = start_y + 15
-            # [修正] 基线补偿 ty-6
             draw_text_mixed(d, (PAD + 15, ty - 6), t["name"], cn_font=F20, en_font=F20, fill=C_TEXT)
             ty += 35
             
             for eff in t["effects"]:
                 if eff["desc"]:
                     pw = int(M12.getlength(eff["phase"]))
-                    d.rectangle([PAD + 15, ty, PAD + 15 + pw + 12, ty + 20], fill=(51, 51, 51, 255), radius=2)
-                    # [修正] 基线补偿 ty+2-4
+                    d.rounded_rectangle([PAD + 15, ty, PAD + 15 + pw + 12, ty + 20], fill=(51, 51, 51, 255), radius=2)
                     draw_text_mixed(d, (PAD + 21, ty - 2), eff["phase"], cn_font=F12, en_font=M12, fill=C_ACCENT)
                     ty += 24
                     
                     lines = wrap_text(eff["desc"], F15, INNER_W - 30)
                     for line in lines:
-                        # [修正] 基线补偿 ty-4
                         draw_text_mixed(d, (PAD + 15, ty - 4), line, cn_font=F15, en_font=O14, fill=(204, 204, 204, 255))
                         ty += desc_lh
                     ty += 8
@@ -458,87 +470,139 @@ def render(html: str) -> bytes:
         y = draw_section_title("技能", "SKILLS")
         for s in data["skills"]:
             start_y = y
-            lines = wrap_text(s["desc"], F15, INNER_W - 30)
-            ch = 15 + 30 + len(lines) * desc_lh + 15
+            lines = wrap_text(s["desc"], F14, INNER_W - 56 - 14 - 40) if s["desc"] else []
+            meta_h = 22 + (4 + len(lines) * desc_lh if lines else 0)
+            header_h = 32 + max(56, meta_h)
             
-            draw_feature_card_bg(start_y, ch)
+            body_h = 0
+            if s["headers"]:
+                body_h += 32
+                body_h += 24
+                body_h += len(s["rows"]) * 24
+                
+            skill_card_h = header_h + body_h # 【修复】：变量名改为 skill_card_h 防止覆盖全局 total_h
             
-            ty = start_y + 15
-            # [修正] 基线补偿 ty-6
-            draw_text_mixed(d, (PAD + 15, ty - 6), s["name"], cn_font=F20, en_font=F20, fill=C_TEXT)
-            ty += 35
+            _draw_rounded_rect(canvas, PAD, start_y, PAD + INNER_W, start_y + skill_card_h, 4, C_CARD_BG, outline=(255,255,255,20))
+            _draw_h_gradient(canvas, PAD, start_y, PAD + int(INNER_W * 0.6), start_y + header_h, (255,230,0,15), (255,230,0,0), r=0)
+            d.line([(PAD, start_y + header_h), (PAD + INNER_W, start_y + header_h)], fill=(255,255,255,15))
+            
+            ix, iy = PAD + 20, start_y + 16
+            if s["icon"]:
+                try:
+                    ic = _b64_fit(s["icon"], 56, 56)
+                    _draw_rounded_rect(canvas, ix, iy, ix+56, iy+56, 8, (0,0,0,0), outline=(255,230,0,76), width=2)
+                    canvas.paste(ic, (ix, iy), _round_mask(56, 56, 8))
+                except: pass
+                
+            mx, my = ix + 56 + 14, iy
+            draw_text_mixed(d, (mx, my-4), s["name"], cn_font=F20, en_font=F20, fill=C_TEXT)
+            nw = int(F20.getlength(s["name"]))
+            
+            if s["badge"]:
+                badge_c_bg, badge_c_fg = (58, 58, 58, 255), C_ACCENT
+                if "normal" in s["badge_cls"]: badge_c_bg, badge_c_fg = (42, 58, 42, 255), (124, 204, 124, 255)
+                elif "battle" in s["badge_cls"]: badge_c_bg, badge_c_fg = (58, 42, 42, 255), (224, 96, 96, 255)
+                elif "combo" in s["badge_cls"]: badge_c_bg, badge_c_fg = (42, 42, 58, 255), (96, 128, 224, 255)
+                elif "ult" in s["badge_cls"]: badge_c_bg, badge_c_fg = (58, 58, 26, 255), (224, 192, 64, 255)
+                
+                bw = int(M12.getlength(s["badge"]))
+                d.rounded_rectangle([mx + nw + 10, my+2, mx + nw + 10 + bw + 16, my + 18], radius=3, fill=badge_c_bg)
+                draw_text_mixed(d, (mx + nw + 18, my), s["badge"], cn_font=F12, en_font=M12, fill=badge_c_fg)
+                
+            my += 26
             for line in lines:
-                # [修正] 基线补偿 ty-4
-                draw_text_mixed(d, (PAD + 15, ty - 4), line, cn_font=F15, en_font=O14, fill=(204, 204, 204, 255))
-                ty += desc_lh
-            y += ch + 10
+                draw_text_mixed(d, (mx, my-2), line, cn_font=F14, en_font=M14, fill=(170,170,170,255))
+                my += desc_lh
+                
+            ty = start_y + header_h + 16
+            if s["headers"]:
+                cols_count = len(s["headers"])
+                col_w = (INNER_W - 40) // cols_count if cols_count else 0
+                
+                d.rectangle([PAD + 20, ty, PAD + INNER_W - 20, ty + 24], fill=(255,230,0,20))
+                for i, th in enumerate(s["headers"]):
+                    tc = C_ACCENT if th["mastery"] else C_ACCENT
+                    if i == 0:
+                        draw_text_mixed(d, (PAD + 30, ty), th["text"], cn_font=F12, en_font=M12, fill=tc)
+                    else:
+                        tw = int(M12.getlength(th["text"]))
+                        draw_text_mixed(d, (PAD + 20 + i*col_w + (col_w - tw)//2, ty), th["text"], cn_font=F12, en_font=M12, fill=tc)
+                d.line([(PAD+20, ty+24), (PAD+INNER_W-20, ty+24)], fill=(255,255,255,25))
+                ty += 24
+                
+                for row in s["rows"]:
+                    for i, td in enumerate(row):
+                        tc = C_ACCENT if td["mastery"] else (204,204,204,255)
+                        f_en = M12
+                        f_cn = F12
+                        if i == 0:
+                            tc = (153,153,153,255)
+                            draw_text_mixed(d, (PAD + 30, ty+2), td["text"], cn_font=f_cn, en_font=f_en, fill=tc)
+                        else:
+                            tw = int(f_en.getlength(td["text"])) if _is_pure_en_num(td["text"]) else int(f_cn.getlength(td["text"]))
+                            draw_text_mixed(d, (PAD + 20 + i*col_w + (col_w - tw)//2, ty+2), td["text"], cn_font=f_cn, en_font=f_en, fill=tc)
+                    d.line([(PAD+20, ty+24), (PAD+INNER_W-20, ty+24)], fill=(255,255,255,8))
+                    ty += 24
+
+            y += skill_card_h + 20
         y += 20
 
     # === Base Skills ===
     if data["base_skills"]:
         y = draw_section_title("基建技能", "BASE SKILLS")
-        start_y = y
-        
-        ch = 15
+        card_h = 30
         bs_heights = []
         for bs in data["base_skills"]:
-            lines = wrap_text(bs["desc"], F15, INNER_W - 30 - 140)
-            rh = max(24, len(lines) * desc_lh) + 14
+            lines = wrap_text(bs["desc"], F14, INNER_W - 30 - 140)
+            rh = max(20, len(lines) * desc_lh) + 14
             bs_heights.append((lines, rh))
-            ch += rh
-        ch += 5
+            card_h += rh
+            
+        draw_feature_card_bg(y, card_h)
         
-        draw_feature_card_bg(start_y, ch)
-        
-        ty = start_y + 15
+        ty = y + 15
         for i, bs in enumerate(data["base_skills"]):
             lines, rh = bs_heights[i]
-            # [修正] 基线补偿 ty-5
-            draw_text_mixed(d, (PAD + 15, ty - 5), bs["name"], cn_font=F16, en_font=F16, fill=(221, 221, 221, 255))
+            draw_text_mixed(d, (PAD + 15, ty - 2), bs["name"], cn_font=F16, en_font=F16, fill=(221,221,221,255))
             
             dy = ty
             for line in lines:
-                # [修正] 基线补偿 dy-4
-                draw_text_mixed(d, (PAD + 155, dy - 4), line, cn_font=F15, en_font=O14, fill=(204, 204, 204, 255))
+                draw_text_mixed(d, (PAD + 155, dy - 2), line, cn_font=F14, en_font=M14, fill=(204,204,204,255))
                 dy += desc_lh
                 
-            d.line([(PAD + 15, ty + rh - 6), (W - PAD - 15, ty + rh - 6)], fill=(255, 255, 255, 12), width=1)
+            d.line([(PAD + 15, ty + rh - 6), (PAD + INNER_W - 15, ty + rh - 6)], fill=(255,255,255,12))
             ty += rh
-        y += ch + 20
+            
+        y += card_h + 20
 
     # === Potentials ===
     if data["potentials"]:
         y = draw_section_title("潜能", "POTENTIALS")
-        start_y = y
-        
-        ch = 15
+        card_h = 30
         pot_heights = []
         for p in data["potentials"]:
             lines = wrap_text(p["desc"], F15, INNER_W - 30 - 55)
             rh = 28 + len(lines) * desc_lh + 12
             pot_heights.append((lines, rh))
-            ch += rh
-        ch += 5
+            card_h += rh
+            
+        draw_feature_card_bg(y, card_h)
         
-        draw_feature_card_bg(start_y, ch)
-        
-        ty = start_y + 15
+        ty = y + 15
         for i, p in enumerate(data["potentials"]):
             lines, rh = pot_heights[i]
-            # [修正] 基线补偿 O24 -> ty-7
-            draw_text_mixed(d, (PAD + 15, ty - 7), f"P{p['rank']}", cn_font=F24, en_font=O24, fill=C_ACCENT)
-            # [修正] 基线补偿 ty+2-5
-            draw_text_mixed(d, (PAD + 70, ty - 3), p["name"], cn_font=F16, en_font=F16, fill=C_TEXT)
+            draw_text_mixed(d, (PAD + 15, ty - 4), f"P{p['rank']}", cn_font=F24, en_font=O24, fill=C_ACCENT)
+            draw_text_mixed(d, (PAD + 70, ty), p["name"], cn_font=F16, en_font=F16, fill=C_TEXT)
             
-            dy = ty + 28
+            dy = ty + 26
             for line in lines:
-                # [修正] 基线补偿 dy-4
-                draw_text_mixed(d, (PAD + 70, dy - 4), line, cn_font=F15, en_font=O14, fill=(204, 204, 204, 255))
+                draw_text_mixed(d, (PAD + 70, dy - 2), line, cn_font=F15, en_font=O14, fill=(204,204,204,255))
                 dy += desc_lh
                 
-            d.line([(PAD + 15, ty + rh - 6), (W - PAD - 15, ty + rh - 6)], fill=(255, 255, 255, 25), width=1)
+            d.line([(PAD + 15, ty + rh - 6), (PAD + INNER_W - 15, ty + rh - 6)], fill=(255,255,255,25))
             ty += rh
-        y += ch + 20
+            
+        y += card_h + 20
 
     # === Footer ===
     fy = total_h - 80
@@ -557,7 +621,6 @@ def render(html: str) -> bytes:
         except Exception: pass
         
     fw = int(O18.getlength(f"WIKI DATABASE // {data['name']}"))
-    # [修正] 基线补偿 O18 -> fy+28-5
     draw_text_mixed(d, (W - 40 - fw, fy + 23), f"WIKI DATABASE // {data['name']}", cn_font=F18, en_font=O18, fill=C_SUBTEXT)
 
     out_rgb = Image.new("RGB", canvas.size, C_BG[:3])

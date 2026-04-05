@@ -59,7 +59,7 @@ def get_emoji_font(size: int) -> ImageFont.FreeTypeFont:
 
 # 预置常用字号和对应的 bold 变量（FxxB），以及对应的等宽英数字体 Mxx 和 英文数字字体 Oxx。
 _COMMON_SIZES = [
-    10, 12, 13, 14, 15, 16, 18, 20, 22, 24, 26, 28, 30, 
+    10, 11, 12, 13, 14, 15, 16, 17, 18, 20, 22, 24, 26, 28, 30, 
     32, 34, 36, 38, 40, 42, 48, 52, 56, 60, 64, 72, 80, 96, 100, 160
 ]
 
@@ -217,6 +217,7 @@ def clear_image_caches() -> list[str]:
 
 # ---------- HTML → 模块 分流规则 ----------
 _DISPATCH: list[tuple[list[str], str, str]] = [
+    (['Blueprint', '最终产物', 'BLUEPRINT PREVIEW'], 'end_wiki_blueprint', '终末地蓝图百科'),
     (['Endfield Daily', '每日监控协议'], 'end_daily_card', '终末地日常'),
     (['终末地公告', 'ann-card-id', 'detail-avatar'], 'end_ann_card', '终末地公告'),
     (['EndUID 更新记录'], 'end_update_log', '终末地更新日志'),
