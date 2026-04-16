@@ -10,8 +10,8 @@ from PIL import Image, ImageDraw, ImageFilter
 
 # 引入工具函数并生成字体
 from . import (F14, F15, F16, F18, F20, F28, F36, F42,
-            M14, M15, M16, M18, 
-            get_font, draw_text_mixed, _b64_img, _b64_fit, _round_mask
+               M14, M15, M16, M18, 
+               get_font, draw_text_mixed, _b64_img, _b64_fit, _round_mask
 )
 
 # 画布基础属性
@@ -72,19 +72,55 @@ def parse_html(html: str) -> dict:
         
         contents = []
         detail_content = soup.select_one(".detail-content")
+        
         if detail_content:
             for child in detail_content.children:
+                # 过滤掉空文本节点
+                if getattr(child, 'name', None) is None:
+                    continue
+
                 if child.name == "div" and "content-text" in child.get("class", []):
-                    texts = [p.get_text(strip=True) for p in child.select("p") if p.get_text(strip=True)]
+                    texts = []
+                    for p in child.select("p"):
+                        # 【核心修复1】: 使用 separator 替换掉 br，严格保留官方原本的文本换行，避免段落被暴力吸附
+                        raw_text = p.get_text(separator='\n', strip=True)
+                        if raw_text:
+                            # 根据换行符拆分成独立的行
+                            texts.extend([line.strip() for line in raw_text.split('\n') if line.strip()])
                     if texts:
                         contents.append({"type": "text", "lines": texts})
+                        
                 elif child.name == "img" and "content-image" in child.get("class", []):
                     contents.append({"type": "image", "src": child.get("src", "")})
+                    
                 elif child.name == "div" and "video-cover-container" in child.get("class", []):
                     cover = child.select_one(".video-cover")
                     if cover:
                         contents.append({"type": "video", "src": cover.get("src", "")})
-        data["contents"] = contents
+                        
+                else:
+                    # 【核心修复2】: 兜底处理其它混入的标签，防止内容丢失且保持原有文档流顺序
+                    img = child.select_one("img.content-image") if hasattr(child, 'select_one') else None
+                    if img:
+                        contents.append({"type": "image", "src": img.get("src", "")})
+                    else:
+                        raw_text = child.get_text(separator='\n', strip=True)
+                        if raw_text:
+                            texts = [line.strip() for line in raw_text.split('\n') if line.strip()]
+                            if texts:
+                                contents.append({"type": "text", "lines": texts})
+            
+            # 【核心修复3】: 聚合相邻的 text 块。避免 HTML 结构过散导致每句话都画一个背景气泡
+            merged_contents = []
+            for item in contents:
+                if item["type"] == "text":
+                    if merged_contents and merged_contents[-1]["type"] == "text":
+                        merged_contents[-1]["lines"].extend(item["lines"])
+                    else:
+                        merged_contents.append(item)
+                else:
+                    merged_contents.append(item)
+            data["contents"] = merged_contents
 
     return data
 
@@ -128,17 +164,22 @@ def draw_bg(canvas: Image.Image, w: int, h: int):
 
 
 def wrap_text(text: str, font, max_width: int) -> list[str]:
-    """简单的文本折行函数"""
+    """【核心修复4】：支持换行符识别的增强文本折行函数"""
     lines = []
-    line = ""
-    for char in text:
-        if font.getlength(line + char) <= max_width:
-            line += char
-        else:
+    # 预先处理掉字符串内部强塞进来的换行，然后再根据宽度折行
+    paragraphs = text.replace('\r\n', '\n').split('\n')
+    for para in paragraphs:
+        if not para:
+            continue
+        line = ""
+        for char in para:
+            if font.getlength(line + char) <= max_width:
+                line += char
+            else:
+                lines.append(line)
+                line = char
+        if line:
             lines.append(line)
-            line = char
-    if line:
-        lines.append(line)
     return lines
 
 
@@ -163,12 +204,10 @@ def render_list_mode(data: dict) -> bytes:
     # 标题头
     hy = PAD
     d.polygon([(PAD, hy), (PAD + 8, hy), (PAD + 4, hy + 42), (PAD - 4, hy + 42)], fill=C_ACCENT)
-    # [修改] 英文下沉 8px (42 * 20%)
     draw_text_mixed(d, (PAD + 20, hy - 4), data["title"], cn_font=F42, en_font=F42, fill=C_TEXT, dy_en=8)
     
     if data["subtitle"]:
         sub_w = int(M16.getlength(data["subtitle"]))
-        # [修改] 英文下沉 3px
         draw_text_mixed(d, (W - PAD - sub_w, hy + 18), data["subtitle"], cn_font=F16, en_font=M16, fill=C_SUBTEXT, dy_en=3)
     
     line_y = hy + 42 + 20
@@ -200,7 +239,6 @@ def render_list_mode(data: dict) -> bytes:
         id_text = f"#{item['short_id']}"
         id_w = int(M15.getlength(id_text)) + 20
         d.rounded_rectangle([cx + 8, cy + 8, cx + 8 + id_w, cy + 8 + 24], radius=4, fill=(0, 0, 0, 178))
-        # [修改] 从 -2 修正为 +3
         draw_text_mixed(d, (cx + 18, cy + 9), id_text, cn_font=M15, en_font=M15, fill=C_ACCENT, dy_en=3)
         
         # 内部标题
@@ -213,7 +251,6 @@ def render_list_mode(data: dict) -> bytes:
             title_lines[1] = title_lines[1][:-1] + "..."
             
         for ti, tline in enumerate(title_lines):
-            # [修改] 英文下沉 4px
             draw_text_mixed(d, (bx, by + ti * 28 - 2), tline, cn_font=F20, en_font=F20, fill=C_TEXT, dy_en=4)
             
         # 底部信息 Meta
@@ -230,11 +267,9 @@ def render_list_mode(data: dict) -> bytes:
         else:
             d.ellipse([bx, my, bx + 32, my + 32], fill=(51, 51, 51, 255))
             
-        # [修改] 英文下沉 3px
         draw_text_mixed(d, (bx + 40, my + 5), item["user"], cn_font=F16, en_font=M16, fill=C_SUBTEXT, dy_en=3)
         
         date_w = int(M16.getlength(item["date"]))
-        # [修改] 中文垫底替换为 F16，英文下沉 3px
         draw_text_mixed(d, (cx + card_w - 14 - date_w, my + 5), item["date"], cn_font=F16, en_font=M16, fill=C_SUBTEXT, dy_en=3)
 
     out_rgb = Image.new("RGB", canvas.size, C_BG[:3])
@@ -294,13 +329,10 @@ def render_detail_mode(data: dict) -> bytes:
     else:
         d.ellipse([ax, ay, ax + 70, ay + 70], fill=(51, 51, 51, 255))
         
-    # [修改] 英文下沉 7px
     draw_text_mixed(d, (ax + 90, ay - 2), data["title"], cn_font=F36, en_font=F36, fill=C_TEXT, dy_en=7)
-    # [修改] 英文下沉 4px
     draw_text_mixed(d, (ax + 90, ay + 44), data["user"], cn_font=F18, en_font=M18, fill=C_SUBTEXT, dy_en=4)
     
     user_w = int(F18.getlength(data["user"])) if not data["user"].isascii() else int(M18.getlength(data["user"]))
-    # [修改] 中文垫底替换为 F18，英文下沉 4px
     draw_text_mixed(d, (ax + 90 + user_w + 15, ay + 44), data["time"], cn_font=F18, en_font=M18, fill=C_SUBTEXT, dy_en=4)
     
     y += header_h + 30
@@ -313,9 +345,13 @@ def render_detail_mode(data: dict) -> bytes:
             ty = y + 20
             for para in el["lines"]:
                 lines = wrap_text(para, F28, INNER_W - 48)
+                
+                # 【体验优化】：针对公告标题增加识别与高亮（根据原网页特征适配）
+                is_title = para.startswith(("▼", "//", "※"))
+                fill_color = C_ACCENT if is_title else (221, 221, 221, 255)
+                
                 for line in lines:
-                    # [修改] 英文下沉 6px
-                    draw_text_mixed(d, (PAD + 24, ty), line, cn_font=F28, en_font=F28, fill=(221, 221, 221, 255), dy_en=6)
+                    draw_text_mixed(d, (PAD + 24, ty), line, cn_font=F28, en_font=F28, fill=fill_color, dy_en=6)
                     ty += text_lh
                 ty += 10 # 段落间距
             y += bh + 15
