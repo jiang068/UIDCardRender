@@ -5,13 +5,13 @@ from __future__ import annotations
 import math
 from io import BytesIO
 
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, Tag, NavigableString
 from PIL import Image, ImageDraw, ImageFilter
 
 # 引入工具函数并生成字体
 from . import (F14, F15, F16, F18, F20, F28, F36, F42,
-               M14, M15, M16, M18, 
-               get_font, draw_text_mixed, _b64_img, _b64_fit, _round_mask
+            M14, M15, M16, M18, 
+            get_font, draw_text_mixed, _b64_img, _b64_fit, _round_mask
 )
 
 # 画布基础属性
@@ -72,55 +72,47 @@ def parse_html(html: str) -> dict:
         
         contents = []
         detail_content = soup.select_one(".detail-content")
-        
         if detail_content:
+            # 改进的流式解析：按顺序处理所有子节点，确图文保顺序不乱
             for child in detail_content.children:
-                # 过滤掉空文本节点
-                if getattr(child, 'name', None) is None:
+                if isinstance(child, NavigableString):
+                    text = child.strip()
+                    if text:
+                        contents.append({"type": "text", "lines": [text]})
+                    continue
+                
+                if not isinstance(child, Tag):
                     continue
 
-                if child.name == "div" and "content-text" in child.get("class", []):
-                    texts = []
-                    for p in child.select("p"):
-                        # 【核心修复1】: 使用 separator 替换掉 br，严格保留官方原本的文本换行，避免段落被暴力吸附
-                        raw_text = p.get_text(separator='\n', strip=True)
-                        if raw_text:
-                            # 根据换行符拆分成独立的行
-                            texts.extend([line.strip() for line in raw_text.split('\n') if line.strip()])
-                    if texts:
-                        contents.append({"type": "text", "lines": texts})
-                        
-                elif child.name == "img" and "content-image" in child.get("class", []):
-                    contents.append({"type": "image", "src": child.get("src", "")})
+                cls = child.get("class", [])
+                # 处理文本块
+                if "content-text" in cls or child.name in ["p", "div", "span"]:
+                    # 优先看有没有内部 p 标签，如果没有，取直接文本
+                    p_tags = child.select("p")
+                    if p_tags:
+                        texts = [p.get_text(strip=True) for p in p_tags if p.get_text(strip=True)]
+                    else:
+                        texts = [child.get_text(strip=True)]
                     
-                elif child.name == "div" and "video-cover-container" in child.get("class", []):
+                    if any(texts):
+                        contents.append({"type": "text", "lines": [t for t in texts if t]})
+                
+                # 处理图片
+                elif "content-image" in cls or child.name == "img":
+                    src = child.get("src") if child.name == "img" else ""
+                    if not src:
+                        img_el = child.select_one("img")
+                        src = img_el.get("src") if img_el else ""
+                    if src:
+                        contents.append({"type": "image", "src": src})
+                
+                # 处理视频
+                elif "video-cover-container" in cls:
                     cover = child.select_one(".video-cover")
                     if cover:
                         contents.append({"type": "video", "src": cover.get("src", "")})
-                        
-                else:
-                    # 【核心修复2】: 兜底处理其它混入的标签，防止内容丢失且保持原有文档流顺序
-                    img = child.select_one("img.content-image") if hasattr(child, 'select_one') else None
-                    if img:
-                        contents.append({"type": "image", "src": img.get("src", "")})
-                    else:
-                        raw_text = child.get_text(separator='\n', strip=True)
-                        if raw_text:
-                            texts = [line.strip() for line in raw_text.split('\n') if line.strip()]
-                            if texts:
-                                contents.append({"type": "text", "lines": texts})
-            
-            # 【核心修复3】: 聚合相邻的 text 块。避免 HTML 结构过散导致每句话都画一个背景气泡
-            merged_contents = []
-            for item in contents:
-                if item["type"] == "text":
-                    if merged_contents and merged_contents[-1]["type"] == "text":
-                        merged_contents[-1]["lines"].extend(item["lines"])
-                    else:
-                        merged_contents.append(item)
-                else:
-                    merged_contents.append(item)
-            data["contents"] = merged_contents
+
+        data["contents"] = contents
 
     return data
 
@@ -151,7 +143,6 @@ def draw_bg(canvas: Image.Image, w: int, h: int):
     for x in range(0, w, 40): gd.line([(x, 0), (x, h)], fill=grid_c, width=1)
     for y in range(0, h, 40): gd.line([(0, y), (w, y)], fill=grid_c, width=1)
     
-    # 顶部往下 20% 实心，之后渐渐变透明的掩码
     mask = Image.new("L", (w, h), 255)
     md = ImageDraw.Draw(mask)
     fade_h = int(h * 0.2)
@@ -164,15 +155,13 @@ def draw_bg(canvas: Image.Image, w: int, h: int):
 
 
 def wrap_text(text: str, font, max_width: int) -> list[str]:
-    """【核心修复4】：支持换行符识别的增强文本折行函数"""
+    """文本自动换行"""
     lines = []
-    # 预先处理掉字符串内部强塞进来的换行，然后再根据宽度折行
-    paragraphs = text.replace('\r\n', '\n').split('\n')
-    for para in paragraphs:
-        if not para:
+    for paragraph in text.split('\n'):
+        if not paragraph.strip():
             continue
         line = ""
-        for char in para:
+        for char in paragraph:
             if font.getlength(line + char) <= max_width:
                 line += char
             else:
@@ -183,15 +172,124 @@ def wrap_text(text: str, font, max_width: int) -> list[str]:
     return lines
 
 
+def render_detail_mode(data: dict) -> bytes:
+    """渲染公告详情长图模式 (修复段落错位版)"""
+    
+    text_lh = int(28 * 1.7)  # 行高
+    elements = []
+    
+    # 第一次遍历：计算总高度并预处理元素
+    cur_y = PAD
+    header_h = 110
+    cur_y += header_h + 30
+    
+    for content in data["contents"]:
+        if content["type"] == "text":
+            block_h = 40  # 基础 Padding (上下各 20)
+            all_wrapped_lines = []
+            for para in content["lines"]:
+                wrapped = wrap_text(para, F28, INNER_W - 48)
+                if wrapped:
+                    all_wrapped_lines.append(wrapped)
+                    block_h += len(wrapped) * text_lh + 10 # 段落间距 10
+            
+            if all_wrapped_lines:
+                block_h -= 10 # 移除最后一个段落多加的间距
+                elements.append({
+                    "type": "text", 
+                    "h": block_h, 
+                    "paragraphs": all_wrapped_lines
+                })
+                cur_y += block_h + 15
+            
+        elif content["type"] in ["image", "video"]:
+            try:
+                img = _b64_img(content["src"])
+                # 等比缩放
+                scaled_h = int(img.height * (INNER_W / img.width))
+                elements.append({"type": content["type"], "img": img, "h": scaled_h})
+                cur_y += scaled_h + 15
+            except Exception:
+                pass
+                
+    total_h = max(cur_y + PAD, 600)
+    
+    # 第二次遍历：实际绘制
+    canvas = Image.new("RGBA", (W, total_h), C_BG)
+    draw_bg(canvas, W, total_h)
+    d = ImageDraw.Draw(canvas)
+    
+    # 1. 绘制头部
+    y = PAD
+    d.rounded_rectangle([PAD, y, PAD + INNER_W, y + header_h], radius=8, fill=C_CARD_BG, outline=C_CARD_BORDER, width=1)
+    
+    ax, ay = PAD + 20, y + 20
+    if data["avatar"]:
+        try:
+            av = _b64_fit(data["avatar"], 70, 70)
+            canvas.paste(av, (ax, ay), _round_mask(70, 70, 35))
+        except Exception:
+            d.ellipse([ax, ay, ax + 70, ay + 70], fill=(51, 51, 51, 255))
+    else:
+        d.ellipse([ax, ay, ax + 70, ay + 70], fill=(51, 51, 51, 255))
+        
+    draw_text_mixed(d, (ax + 90, ay - 2), data["title"], cn_font=F36, en_font=F36, fill=C_TEXT, dy_en=7)
+    draw_text_mixed(d, (ax + 90, ay + 44), data["user"], cn_font=F18, en_font=M18, fill=C_SUBTEXT, dy_en=4)
+    
+    user_w = int(F18.getlength(data["user"])) if not data["user"].isascii() else int(M18.getlength(data["user"]))
+    draw_text_mixed(d, (ax + 90 + user_w + 15, ay + 44), data["time"], cn_font=F18, en_font=M18, fill=C_SUBTEXT, dy_en=4)
+    
+    y += header_h + 30
+    
+    # 2. 绘制内容块
+    for el in elements:
+        if el["type"] == "text":
+            bh = el["h"]
+            # 绘制文字块背景
+            d.rounded_rectangle([PAD, y, PAD + INNER_W, y + bh], radius=8, fill=C_CARD_BG)
+            
+            ty = y + 20
+            for wrapped_para in el["paragraphs"]:
+                for line in wrapped_para:
+                    # 英文下沉 6px 以对齐中文字体
+                    draw_text_mixed(d, (PAD + 24, ty), line, cn_font=F28, en_font=F28, fill=(221, 221, 221, 255), dy_en=6)
+                    ty += text_lh
+                ty += 10 # 段落间距
+            y += bh + 15
+            
+        elif el["type"] in ["image", "video"]:
+            img = el["img"]
+            ih = el["h"]
+            resized = img.resize((INNER_W, ih), Image.Resampling.LANCZOS)
+            canvas.paste(resized, (PAD, y), _round_mask(INNER_W, ih, 8))
+            
+            # 图片边框
+            d.rounded_rectangle([PAD, y, PAD + INNER_W, y + ih], radius=8, outline=(0, 0, 0, 76), width=1)
+            
+            if el["type"] == "video":
+                px, py = PAD + INNER_W // 2, y + ih // 2
+                d.ellipse([px - 30, py - 30, px + 30, py + 30], fill=(0, 0, 0, 153))
+                d.polygon([(px - 8, py - 12), (px + 12, py), (px - 8, py + 12)], fill=C_TEXT)
+                
+            y += ih + 15
+
+    # 转换并返回
+    out_rgb = Image.new("RGB", canvas.size, C_BG[:3])
+    out_rgb.paste(canvas, mask=canvas.split()[3])
+    buf = BytesIO()
+    out_rgb.save(buf, format="JPEG", quality=88, optimize=True)
+    return buf.getvalue()
+
+
 def render_list_mode(data: dict) -> bytes:
     """渲染公告列表网格模式"""
     items = data["items"]
     
     cols = 3
     gap = 15
-    card_w = (INNER_W - gap * (cols - 1)) // cols  # 约 330px
-    cover_h = int(card_w * 10 / 16)                # 约 206px
-    card_h = cover_h + 115                         # 卡片高度 321px
+    card_w = (INNER_W - gap * (cols - 1)) // cols
+    cover_h = int(card_w * 10 / 16)
+    card_h = cover_h + 115
     
     rows = math.ceil(len(items) / cols)
     total_h = PAD + 42 + 20 + 20 + (rows * card_h) + max(0, rows - 1) * gap + PAD
@@ -220,10 +318,9 @@ def render_list_mode(data: dict) -> bytes:
         cx = PAD + col * (card_w + gap)
         cy = gy + row * (card_h + gap)
         
-        # 卡片背景
         d.rounded_rectangle([cx, cy, cx + card_w, cy + card_h], radius=8, fill=C_CARD_BG, outline=C_CARD_BORDER, width=1)
         
-        # 卡片封面图
+        # 封面图
         cover_rect = Image.new("RGBA", (card_w, cover_h), (34, 34, 34, 255))
         if item["cover"]:
             try:
@@ -241,10 +338,9 @@ def render_list_mode(data: dict) -> bytes:
         d.rounded_rectangle([cx + 8, cy + 8, cx + 8 + id_w, cy + 8 + 24], radius=4, fill=(0, 0, 0, 178))
         draw_text_mixed(d, (cx + 18, cy + 9), id_text, cn_font=M15, en_font=M15, fill=C_ACCENT, dy_en=3)
         
-        # 内部标题
+        # 标题
         by = cy + cover_h + 14
         bx = cx + 14
-        
         title_lines = wrap_text(item["title"], F20, card_w - 28)
         if len(title_lines) > 2:
             title_lines = title_lines[:2]
@@ -253,7 +349,7 @@ def render_list_mode(data: dict) -> bytes:
         for ti, tline in enumerate(title_lines):
             draw_text_mixed(d, (bx, by + ti * 28 - 2), tline, cn_font=F20, en_font=F20, fill=C_TEXT, dy_en=4)
             
-        # 底部信息 Meta
+        # 底部元数据
         my = cy + card_h - 46
         d.line([(bx, my - 10), (cx + card_w - 14, my - 10)], fill=(255, 255, 255, 12), width=1)
         
@@ -268,7 +364,6 @@ def render_list_mode(data: dict) -> bytes:
             d.ellipse([bx, my, bx + 32, my + 32], fill=(51, 51, 51, 255))
             
         draw_text_mixed(d, (bx + 40, my + 5), item["user"], cn_font=F16, en_font=M16, fill=C_SUBTEXT, dy_en=3)
-        
         date_w = int(M16.getlength(item["date"]))
         draw_text_mixed(d, (cx + card_w - 14 - date_w, my + 5), item["date"], cn_font=F16, en_font=M16, fill=C_SUBTEXT, dy_en=3)
 
@@ -276,105 +371,6 @@ def render_list_mode(data: dict) -> bytes:
     out_rgb.paste(canvas, mask=canvas.split()[3])
     buf = BytesIO()
     out_rgb.save(buf, format="JPEG", quality=90, optimize=True)
-    return buf.getvalue()
-
-
-def render_detail_mode(data: dict) -> bytes:
-    """渲染公告详情长图模式"""
-    
-    # 第一次遍历，测量各组件需要的高度
-    cur_y = PAD
-    header_h = 110
-    cur_y += header_h + 30
-    
-    elements = []
-    text_lh = int(28 * 1.7) # 行高
-    
-    for content in data["contents"]:
-        if content["type"] == "text":
-            block_h = 40 # 上下 padding
-            for para in content["lines"]:
-                lines = wrap_text(para, F28, INNER_W - 48)
-                block_h += len(lines) * text_lh + 10
-            block_h -= 10
-            elements.append({"type": "text", "h": block_h, "lines": content["lines"]})
-            cur_y += block_h + 15
-            
-        elif content["type"] in ["image", "video"]:
-            try:
-                img = _b64_img(content["src"])
-                scaled_h = int(img.height * (INNER_W / img.width))
-                elements.append({"type": content["type"], "img": img, "h": scaled_h})
-                cur_y += scaled_h + 15
-            except Exception:
-                pass
-                
-    total_h = max(cur_y + PAD, 600)
-    
-    # 第二次遍历，开始实际绘制图层
-    canvas = Image.new("RGBA", (W, total_h), C_BG)
-    draw_bg(canvas, W, total_h)
-    d = ImageDraw.Draw(canvas)
-    
-    y = PAD
-    d.rounded_rectangle([PAD, y, PAD + INNER_W, y + header_h], radius=8, fill=C_CARD_BG, outline=C_CARD_BORDER, width=1)
-    
-    ax, ay = PAD + 20, y + 20
-    if data["avatar"]:
-        try:
-            av = _b64_fit(data["avatar"], 70, 70)
-            canvas.paste(av, (ax, ay), _round_mask(70, 70, 35))
-        except Exception:
-            d.ellipse([ax, ay, ax + 70, ay + 70], fill=(51, 51, 51, 255))
-    else:
-        d.ellipse([ax, ay, ax + 70, ay + 70], fill=(51, 51, 51, 255))
-        
-    draw_text_mixed(d, (ax + 90, ay - 2), data["title"], cn_font=F36, en_font=F36, fill=C_TEXT, dy_en=7)
-    draw_text_mixed(d, (ax + 90, ay + 44), data["user"], cn_font=F18, en_font=M18, fill=C_SUBTEXT, dy_en=4)
-    
-    user_w = int(F18.getlength(data["user"])) if not data["user"].isascii() else int(M18.getlength(data["user"]))
-    draw_text_mixed(d, (ax + 90 + user_w + 15, ay + 44), data["time"], cn_font=F18, en_font=M18, fill=C_SUBTEXT, dy_en=4)
-    
-    y += header_h + 30
-    
-    # 绘制内容块
-    for el in elements:
-        if el["type"] == "text":
-            bh = el["h"]
-            d.rounded_rectangle([PAD, y, PAD + INNER_W, y + bh], radius=8, fill=C_CARD_BG)
-            ty = y + 20
-            for para in el["lines"]:
-                lines = wrap_text(para, F28, INNER_W - 48)
-                
-                # 【体验优化】：针对公告标题增加识别与高亮（根据原网页特征适配）
-                is_title = para.startswith(("▼", "//", "※"))
-                fill_color = C_ACCENT if is_title else (221, 221, 221, 255)
-                
-                for line in lines:
-                    draw_text_mixed(d, (PAD + 24, ty), line, cn_font=F28, en_font=F28, fill=fill_color, dy_en=6)
-                    ty += text_lh
-                ty += 10 # 段落间距
-            y += bh + 15
-            
-        elif el["type"] in ["image", "video"]:
-            img = el["img"]
-            ih = el["h"]
-            resized = img.resize((INNER_W, ih), Image.Resampling.LANCZOS)
-            canvas.paste(resized, (PAD, y), _round_mask(INNER_W, ih, 8))
-            
-            d.rounded_rectangle([PAD, y, PAD + INNER_W, y + ih], radius=8, outline=(0, 0, 0, 76), width=1)
-            
-            if el["type"] == "video":
-                px, py = PAD + INNER_W // 2, y + ih // 2
-                d.ellipse([px - 30, py - 30, px + 30, py + 30], fill=(0, 0, 0, 153))
-                d.polygon([(px - 8, py - 12), (px + 12, py), (px - 8, py + 12)], fill=C_TEXT)
-                
-            y += ih + 15
-
-    out_rgb = Image.new("RGB", canvas.size, C_BG[:3])
-    out_rgb.paste(canvas, mask=canvas.split()[3])
-    buf = BytesIO()
-    out_rgb.save(buf, format="JPEG", quality=88, optimize=True)
     return buf.getvalue()
 
 
